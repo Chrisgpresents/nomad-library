@@ -206,6 +206,31 @@ function oneCardPerFilm(rows) {
 const SCENARIOS = [];
 const scenario = (name, fn) => SCENARIOS.push([name, fn]);
 
+scenario("bigger covers: fewer columns, saved on reload, no mobile overflow", async b => {
+  const W = world({ snap: { chipublib: { body: snapBody(makeRows("chipublib", 40)) } } });
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await pickLibrary(page, "chipublib");
+  await waitCards(page, 12);
+  const columns = () => page.$eval("#grid", e => getComputedStyle(e).gridTemplateColumns.split(" ").length);
+  const initial = await columns();
+  await page.click("#biggerCovers");
+  ok(await columns() === 4 && initial > 4, "desktop switches from the usual grid to four columns");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitCards(page, 12);
+  ok(await columns() === 4, "larger covers survive a reload");
+  ok(await page.$eval("#biggerCovers", e => e.getAttribute("aria-pressed")) === "true", "the saved choice is announced as pressed");
+  await page.setViewport({ width: 390, height: 844 });
+  ok(await columns() === 1, "larger covers use one column on a phone");
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "larger covers do not cause sideways scrolling");
+  await page.click("#biggerCovers");
+  ok(await columns() === 2, "turning the option off restores two columns on a phone");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitCards(page, 12);
+  ok(await columns() === 2, "the default size is also saved");
+  ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
+});
+
 scenario("cold first visit, large real catalog: usable shelf time, then search/filters/games/detail", async b => {
   const rows = realRows("bclsnj") ? realRows("bclsnj").rows : makeRows("bclsnj", 28000, { games: 1600 });
   const W = world({ snap: { bclsnj: { body: snapBody(rows.length ? rows : []), delay: 700 } } });

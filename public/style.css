@@ -102,6 +102,8 @@ select { padding: 8px 10px; border: 1.5px solid var(--rule); border-radius: var(
 
 /* grid */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 22px 16px; }
+.bigger-covers .grid { grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); }
+#biggerCovers[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 18px 12px; } }
 .card { background: none; border: 0; padding: 0; text-align: left; display: flex; flex-direction: column; gap: 6px; position: relative; }
 .cover { aspect-ratio: 2/3; width: 100%; border-radius: var(--r); background: var(--card); border: 1px solid var(--rule); overflow: hidden; position: relative; box-shadow: var(--shadow); }
@@ -224,7 +226,7 @@ input:focus-visible, select:focus-visible { outline-offset: 0; }
 .foot .credit a:hover { text-decoration: underline; }
 .foot .yt { width: 28px; height: 20px; flex: none; }
 /* filters */
-.filt { padding: 8px 14px; font-size: 14px; }
+.filt, #biggerCovers { padding: 8px 14px; font-size: 14px; }
 .active { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 4px; }
 .active:empty { display: none; }
 .tag { background: var(--ink); color: var(--paper); border: 0; border-radius: var(--r); padding: 5px 10px; font-size: 13px; font-weight: 500; }

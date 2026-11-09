@@ -15,7 +15,7 @@ const store = {
   set(v) { try { localStorage.setItem("nl", JSON.stringify(v)); } catch {} },
 };
 let S = Object.assign({ lib: null, libName: "", fmt: "all", shelf: "all", sort: "", onShelf: false, faves: {}, watch: null,
-  genres: [], coll: "", plat: "", y0: 0, y1: 0, minR: 0 }, store.get());
+  genres: [], coll: "", plat: "", y0: 0, y1: 0, minR: 0, biggerCovers: false }, store.get());
 if (!Array.isArray(S.genres)) S.genres = [];
 delete S.ages;                            // the age-rating filter (11.1.26) was taken back out
 if ("genre" in S) {                       // saved before genres could be combined
@@ -1345,6 +1345,8 @@ function setTab(tab) {
 }
 
 function paintControls() {
+  document.body.classList.toggle("bigger-covers", S.biggerCovers === true);
+  $("#biggerCovers").setAttribute("aria-pressed", S.biggerCovers === true);
   document.body.classList.toggle("guest", isGuest());
   document.querySelectorAll("#fmt button").forEach(b => b.setAttribute("aria-pressed", b.dataset.fmt === S.fmt));
   // the nationwide shelf has no arrival dates, so it offers "Most popular" in place of "Newest arrivals"
@@ -1604,6 +1606,7 @@ function boot(fromPop) {
 
 $("#fmt").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.fmt = b.dataset.fmt; save(); paintControls(); reload(); };
 $("#sort").onchange = () => { S.sort = $("#sort").value; save(); reload(); };
+$("#biggerCovers").onclick = () => { S.biggerCovers = !S.biggerCovers; store.set(S); paintControls(); };
 $("#searchForm").onsubmit = e => { e.preventDefault(); $("#q").blur(); liveQ = !instant() && !!$("#q").value.trim() ? liveQ : false; reload(); };
 let typing;
 $("#q").addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => { liveQ = false; if (instant() || SNAP?.ver) reload(); }, 180); });
