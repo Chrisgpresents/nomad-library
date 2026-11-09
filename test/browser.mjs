@@ -931,6 +931,41 @@ scenario("several library cards: the list remembers each library, All my librari
   ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
 });
 
+scenario("rename libraries: save, cancel, reject blank names, persist and switch", async b => {
+  const W = world({ snap: { alpha: { body: snapBody(makeRows("alpha", 40)) }, beta: { body: snapBody(makeRows("beta", 40)) } } });
+  const { page } = await newPage(b, W, { seedState: {
+    lib: "alpha", libName: "Alpha Public Library", libs: [
+      { lib: "alpha", name: "Alpha Public Library" }, { lib: "beta", name: "Beta Public Library" }
+    ]
+  } });
+  await page.goto(`https://${HOST}/?lib=alpha`, { waitUntil: "domcontentloaded" });
+  await waitCards(page, 12);
+  await page.click("#libBtn");
+  await page.click('[data-lib-rename="0"]');
+  await page.$eval("#libraryName", e => { e.value = "   "; });
+  await page.$eval("#renameLibForm", e => e.requestSubmit());
+  ok(await page.$eval("#renameLibErr", e => !!e.textContent), "blank names are rejected");
+  await page.$eval("#libraryName", e => { e.value = '  My <local> library  '; });
+  await page.$eval("#renameLibForm", e => e.requestSubmit());
+  ok(await page.$eval("#libBtn", e => e.textContent) === "My <local> library", "active header uses the trimmed name");
+  ok(await page.$eval('[data-lib-i="0"]', e => e.textContent) === "My <local> library", "the name is rendered as text");
+  await page.click('[data-lib-rename="1"]');
+  await page.$eval("#libraryName", e => { e.value = "Discard this"; });
+  await page.click("#cancelRenameLib");
+  ok(await page.$eval('[data-lib-i="1"]', e => e.textContent) === "Beta Public Library", "cancel leaves the name unchanged");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitCards(page, 12);
+  ok(await page.$eval("#libBtn", e => e.textContent) === "My <local> library", "the custom name survives catalog lookup after reload");
+  await page.click("#libBtn");
+  await page.click('[data-lib-i="1"]');
+  await page.waitForFunction(() => document.querySelector("#libBtn").textContent === "Beta Public Library");
+  await page.click("#libBtn");
+  await page.click('[data-lib-i="0"]');
+  await page.waitForFunction(() => document.querySelector("#libBtn").textContent === "My <local> library");
+  ok(true, "switching libraries keeps their separate names");
+  ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
+});
+
 // ---- run ------------------------------------------------------------------------------------------------
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-first-run", "--disable-gpu", ...(process.env.CI ? ["--no-sandbox"] : [])] });
 try {

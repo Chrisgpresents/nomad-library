@@ -160,7 +160,11 @@ function rememberLib() {
   if (isGuest()) e.guest = S.guest || {};
   if (isReaderLib(S.lib) && (S.libUrl || libUrlOf(S.lib))) e.url = S.libUrl || libUrlOf(S.lib);
   const k = libKey(e), i = S.libs.findIndex(x => libKey(x) === k);
-  if (i >= 0) S.libs[i] = e; else S.libs.push(e);
+  if (i >= 0) {
+    e.name = S.libs[i].name || e.name;
+    S.libs[i] = e; S.libName = e.name;
+    if (isGuest()) S.guest.name = e.name;
+  } else S.libs.push(e);
   if (S.libs.length > 8) S.libs = S.libs.slice(-8);
 }
 if (!S.libs.length && S.lib && !S.demo && S.lib !== MINE) rememberLib();
@@ -1625,9 +1629,41 @@ function switchLib(e) {
   if ($("#account").open) $("#account").close();
   save(); setTimeout(() => { boot(); history.replaceState({ nl: "shelf" }, "", "/?lib=" + encodeURIComponent(S.lib)); }, 60);
 }
+function renameLib(i) {
+  const lib = S.libs[i];
+  if (!lib) return;
+  const active = libKey(lib) === libKey({ lib: S.lib, name: S.libName, guest: S.guest });
+  acctView(`<h2>Rename library</h2>
+    <form id="renameLibForm" class="stack">
+      <label for="libraryName">Library name</label>
+      <input id="libraryName" name="name" type="text" value="${esc(lib.name || "")}" required maxlength="100">
+      <p id="renameLibErr" class="err" role="alert"></p>
+      <button class="btn" type="submit">Save</button>
+      <button class="btn ghost" id="cancelRenameLib" type="button">Cancel</button>
+    </form>`);
+  const input = $("#libraryName");
+  const back = () => { openLibs(); $(`[data-lib-rename="${i}"]`)?.focus(); };
+  $("#cancelRenameLib").onclick = back;
+  $("#renameLibForm").onsubmit = ev => {
+    ev.preventDefault();
+    const name = input.value.trim();
+    if (!name) { $("#renameLibErr").textContent = "Enter a library name."; input.focus(); return; }
+    lib.name = name;
+    if (lib.guest) lib.guest.name = name;
+    if (active) {
+      S.libName = name;
+      if (isGuest()) S.guest.name = name;
+      $("#libBtn").textContent = name;
+    }
+    save(); back();
+    reload();
+  };
+  input.focus(); input.select();
+}
+
 function openLibs() {
   const cur = isMine() ? MINE : libKey({ lib: S.lib, name: S.libName, guest: S.guest });
-  const row = (e, i) => `<div class="lib-row"><button class="btn${libKey(e) === cur ? "" : " ghost"}" data-lib-i="${i}"${libKey(e) === cur ? ' aria-current="true"' : ""}>${esc(e.name || (e.lib === GUEST ? "Your library" : e.lib))}</button>${S.libs.length > 1 ? `<button class="x-lib" data-lib-x="${i}" aria-label="Remove ${esc(e.name || "this library")}">×</button>` : ""}</div>`;
+  const row = (e, i) => `<div class="lib-row"><button class="btn${libKey(e) === cur ? "" : " ghost"}" data-lib-i="${i}"${libKey(e) === cur ? ' aria-current="true"' : ""}>${esc(e.name || (e.lib === GUEST ? "Your library" : e.lib))}</button><button class="rename-lib" data-lib-rename="${i}" aria-label="Rename ${esc(e.name || "this library")}">Rename</button>${S.libs.length > 1 ? `<button class="x-lib" data-lib-x="${i}" aria-label="Remove ${esc(e.name || "this library")}">×</button>` : ""}</div>`;
   const both = readableLibs().length >= 2;
   acctView(`<h2>Your libraries</h2>
     <p>${S.libs.length > 1 ? "Switch between your library cards, or see them all on one shelf." : "Have more than one library card? Add another and see them all on one shelf."}</p>
@@ -1640,6 +1676,7 @@ function openLibs() {
   $("#acctBody").onclick = ev => {
     const t = ev.target.closest("button"); if (!t) return;
     if (t.hasAttribute("data-lib-mine")) return switchLib(MINE);
+    if (t.dataset.libRename != null) return renameLib(+t.dataset.libRename);
     if (t.dataset.libI != null) return switchLib(S.libs[+t.dataset.libI]);
     if (t.dataset.libX != null) {
       const gone = S.libs.splice(+t.dataset.libX, 1)[0];
