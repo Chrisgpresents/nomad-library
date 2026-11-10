@@ -1591,8 +1591,18 @@ function showHome(fromPop) {
   maybeAskUpdates();
 }
 
+function shelfLink(e) {
+  if (!e) e = isMine() ? { lib: MINE } : { lib: S.lib, name: S.libName, guest: S.guest };
+  if (e.lib === MINE) return "/?lib=mine";
+  if (e.lib === GUEST) {
+    const cat = e.guest?.catalog?.url || (e === S || (!e.guest && isGuest()) ? guestCatalog()?.url : "") || "";
+    return cat ? "/?lib=shelf&catalog=" + encodeURIComponent(cat) : "/?lib=shelf";
+  }
+  return "/?lib=" + encodeURIComponent(e.lib);
+}
+
 function boot(fromPop) {
-  if (S.lib && !fromPop && history.state?.nl !== "shelf") history.pushState({ nl: "shelf" }, "", "/?lib=" + encodeURIComponent(S.lib));
+  if (S.lib && !fromPop && history.state?.nl !== "shelf") history.pushState({ nl: "shelf" }, "", shelfLink());
   counts();
   if (!S.lib) { showHome(); $("#libBtn").hidden = true; return; }
   $("#pick").hidden = true; $("#shelf").hidden = false;
@@ -1623,11 +1633,11 @@ function switchLib(e) {
   S.demo = false; S.shelf = "all"; S.sort = isGuest() ? "pop" : ""; clearFilter("all"); S.fmt = "all";
   toastDismissed = "";
   if ($("#account").open) $("#account").close();
-  save(); setTimeout(() => { boot(); history.replaceState({ nl: "shelf" }, "", "/?lib=" + encodeURIComponent(S.lib)); }, 60);
+  save(); setTimeout(() => { boot(); history.replaceState({ nl: "shelf" }, "", shelfLink()); }, 60);
 }
 function openLibs() {
   const cur = isMine() ? MINE : libKey({ lib: S.lib, name: S.libName, guest: S.guest });
-  const row = (e, i) => `<div class="lib-row"><button class="btn${libKey(e) === cur ? "" : " ghost"}" data-lib-i="${i}"${libKey(e) === cur ? ' aria-current="true"' : ""}>${esc(e.name || (e.lib === GUEST ? "Your library" : e.lib))}</button>${S.libs.length > 1 ? `<button class="x-lib" data-lib-x="${i}" aria-label="Remove ${esc(e.name || "this library")}">×</button>` : ""}</div>`;
+  const row = (e, i) => `<div class="lib-row"><button class="btn${libKey(e) === cur ? "" : " ghost"}" data-lib-i="${i}"${libKey(e) === cur ? ' aria-current="true"' : ""}>${esc(e.name || (e.lib === GUEST ? "Your library" : e.lib))}</button><button class="copy-lib" data-lib-copy="${i}" aria-label="Copy link for ${esc(e.name || "this library")}">Copy link</button>${S.libs.length > 1 ? `<button class="x-lib" data-lib-x="${i}" aria-label="Remove ${esc(e.name || "this library")}">×</button>` : ""}</div>`;
   const both = readableLibs().length >= 2;
   acctView(`<h2>Your libraries</h2>
     <p>${S.libs.length > 1 ? "Switch between your library cards, or see them all on one shelf." : "Have more than one library card? Add another and see them all on one shelf."}</p>
@@ -1637,9 +1647,16 @@ function openLibs() {
       <button class="btn ghost" id="addLib">+ Add another library card</button>
     </div>`);
   if (!$("#account").open) $("#account").showModal();
-  $("#acctBody").onclick = ev => {
+  $("#acctBody").onclick = async ev => {
     const t = ev.target.closest("button"); if (!t) return;
     if (t.hasAttribute("data-lib-mine")) return switchLib(MINE);
+    if (t.dataset.libCopy != null) {
+      const e = S.libs[+t.dataset.libCopy]; if (!e) return;
+      const link = location.origin + shelfLink(e);
+      try { await navigator.clipboard?.writeText(link); toast("Link copied."); }
+      catch { prompt("Copy this link", link); }
+      return;
+    }
     if (t.dataset.libI != null) return switchLib(S.libs[+t.dataset.libI]);
     if (t.dataset.libX != null) {
       const gone = S.libs.splice(+t.dataset.libX, 1)[0];
@@ -1734,12 +1751,15 @@ function countVisit() {
 }
 countVisit();
 
-const linked = new URLSearchParams(location.search).get("lib");
+const params = new URLSearchParams(location.search);
+const linked = params.get("lib");
+const linkedCat = params.get("catalog");
 // library.nomadovernormal.com/?updates (the video description link) opens straight on the updates sign-up card.
-const wantsUpdates = new URLSearchParams(location.search).has("updates");
+const wantsUpdates = params.has("updates");
 history.replaceState({ nl: "home" }, "", "/");
 if (linked === MINE) { if (readableLibs().length >= 2) { S.lib = MINE; S.libName = "All my libraries"; boot(); } else showHome(); }
 else if (isReaderLib(linked)) enterReader({ name: linked === S.lib ? S.libName : "" }, linked);
+else if (linked === GUEST && linkedCat) chooseLibrary(linkedCat);
 else if (linked && linked !== GUEST) chooseLibrary(linked, linked !== S.lib || !!S.demo);
 else showHome();
 if (wantsUpdates) showUpdatesCard().querySelector("input[type=email]")?.focus();
