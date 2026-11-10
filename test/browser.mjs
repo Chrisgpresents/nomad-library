@@ -887,6 +887,11 @@ scenario("narrow phone layout: no sideways scrolling on home, shelf, detail", as
   let o = await ov(); ok(o.sw <= o.cw, `home: no overflow (${o.sw} vs ${o.cw})`);
   await pickLibrary(page, "alpha"); await waitCards(page, 12); await sleep(500);
   o = await ov(); ok(o.sw <= o.cw, `shelf: no overflow (${o.sw} vs ${o.cw})`);
+  const logo = await page.$eval(".brand img", img => {
+    const { width, height } = img.getBoundingClientRect();
+    return { width, height };
+  });
+  ok(logo.width === 32 && logo.height === 32, `shelf logo: 32 × 32 (${logo.width} × ${logo.height})`);
   await page.click("#grid .card"); await sleep(500);
   const d = await page.$eval("#detail", e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, w: innerWidth }; });
   ok(d.l >= -1 && d.r <= d.w + 1, `detail sheet fits the screen (${Math.round(d.l)}..${Math.round(d.r)} of ${d.w})`);
