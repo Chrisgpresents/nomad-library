@@ -35,7 +35,7 @@ a { color: inherit; }
   padding: 12px 24px; padding-top: max(10px, env(safe-area-inset-top));
   background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--rule); }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 600 18px/1 var(--sans); letter-spacing: -.01em; white-space: nowrap; }
+.brand { display: flex; flex-shrink: 0; align-items: center; gap: 10px; text-decoration: none; font: 600 18px/1 var(--sans); letter-spacing: -.01em; white-space: nowrap; }
 .nav { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .navlink { text-decoration: none; font-weight: 500; font-size: 14px; padding: 7px 10px; border-radius: var(--r); }
 .navlink:hover { background: var(--card); }
