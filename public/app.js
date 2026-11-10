@@ -390,7 +390,8 @@ async function liveMore(my = run, fillPages = 0) {
     const localFilters = S.onShelf || S.plat || S.minR || S.y0 || S.y1;
     $("#status").innerHTML = esc(d.total ? (localFilters ? `${$("#grid").children.length.toLocaleString()} matches loaded · ${d.total.toLocaleString()} catalog results` : `${d.total.toLocaleString()} titles`) : "Nothing here at this library.") + liveNote();
     paintCopyToast();
-    $("#more").textContent = page < pages ? "Loading more…" : (d.total ? "That's the whole shelf." : "");
+    if (page < pages) $("#more").innerHTML = moreResultsButton;
+    else $("#more").textContent = d.total ? "That's the whole shelf." : "";
   } catch (e) {
     failed = true;
     if (my === run) { $("#status").textContent = e.message; $("#more").innerHTML = '<button class="link" id="retryMore">Try again</button>'; }
@@ -398,7 +399,6 @@ async function liveMore(my = run, fillPages = 0) {
   // keep filling a short first screen, but never after a failure (that would retry forever)
   if (!failed && my === run && page < pages && $("#grid").children.length < 12) {
     if (fillPages < 2) liveMore(my, fillPages + 1);
-    else $("#more").innerHTML = '<button class="link" id="retryMore">Load more results</button>';
   }
 }
 
@@ -836,10 +836,13 @@ function snapMore() {
   const next = snapList.slice(snapShown, snapShown + PER);
   snapShown += next.length;
   $("#grid").insertAdjacentHTML("beforeend", next.map(cardHTML).join(""));
-  $("#more").textContent = snapShown < snapList.length ? "Loading more…" : "That's the whole shelf.";
+  if (snapShown < snapList.length) $("#more").innerHTML = moreResultsButton;
+  else $("#more").textContent = "That's the whole shelf.";
 }
 
-function loadMore() { if (snapping) return; if (instant()) snapMore(); else liveMore(); }
+const moreResultsButton = '<button class="link" type="button" id="loadMore">Load more results</button>';
+
+function loadMore() { if (snapping) return; if (instant()) snapMore(); else return liveMore(); }
 
 async function reload() {
   paintActive();
@@ -957,6 +960,12 @@ $("#filtBody").addEventListener("input", e => {
 $("#filters").addEventListener("close", () => { liveQ = false; reload(); });
 $("#filtBtn").onclick = openFilters;
 $("#active").addEventListener("click", e => { const b = e.target.closest("[data-clear]"); if (b) { clearFilter(b.dataset.clear); save(); reload(); } });
+$("#more").addEventListener("click", async e => {
+  if (e.target.id !== "loadMore") return;
+  const focused = document.activeElement === e.target;
+  await loadMore();
+  if (focused && document.activeElement === document.body) $("#loadMore")?.focus({ preventScroll: true });
+});
 document.addEventListener("click", e => { if (e.target.id === "wholeCat") { liveQ = true; reload(); } else if (e.target.id === "retryMore") { $("#more").textContent = "Loading more…"; liveMore(); } else if (e.target.id === "openReadyCopy") { reload(); } else if (e.target.closest?.("[data-ct-close]")) { toastDismissed = S.lib; paintCopyToast(); } else if (e.target.id === "addCatalog" || e.target.id === "addCatalogToast") askCatalog(); });
 // From the shelf: back to the home page and its one box, to add the catalog link.
 function askCatalog() {
@@ -1717,7 +1726,7 @@ $("#wlFile").onchange = () => importWatchlist($("#wlFile").files[0]);
 $("#drop").addEventListener("dragover", e => { e.preventDefault(); $("#drop").classList.add("over"); });
 $("#drop").addEventListener("dragleave", () => $("#drop").classList.remove("over"));
 $("#drop").addEventListener("drop", e => { e.preventDefault(); $("#drop").classList.remove("over"); importWatchlist(e.dataTransfer.files[0]); });
-new IntersectionObserver(es => { if (es[0].isIntersecting && !$("#shelf").hidden && !$("#browse").hidden && S.lib) loadMore(); }, { rootMargin: "800px" }).observe($("#more"));
+
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 // The shelf starts loading right away. The account check runs alongside it.
