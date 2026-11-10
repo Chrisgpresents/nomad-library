@@ -931,6 +931,42 @@ scenario("several library cards: the list remembers each library, All my librari
   ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
 });
 
+scenario("shelf pagination lets the reader reach the footer", async b => {
+  const W = world({ snap: { alpha: { body: snapBody(makeRows("alpha", 300)) } } });
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await pickLibrary(page, "alpha");
+  await waitCards(page, 12);
+  const firstPage = await cards(page);
+  await page.$eval(".foot", e => e.scrollIntoView({ block: "end" }));
+  await sleep(750);
+  const beforeClick = await cards(page);
+  ok(beforeClick === firstPage, `scrolling to the footer leaves the shelf at ${firstPage} cards (saw ${beforeClick})`);
+  const more = await page.$("#loadMore");
+  ok(!!more, "there is an explicit Load more results button");
+  if (!more) return;
+  await more.click();
+  await waitCards(page, beforeClick + 1);
+  ok(await cards(page) > beforeClick, "Load more results appends the next page");
+});
+
+scenario("shelf pagination requests live results only when asked", async b => {
+  const W = world();
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await pickLibrary(page, "gamma");
+  await waitCards(page, 12);
+  await page.waitForSelector("#loadMore");
+  const firstPage = await cards(page);
+  const requests = W.searchReqs.length;
+  await page.$eval(".foot", e => e.scrollIntoView({ block: "end" }));
+  await sleep(750);
+  ok(W.searchReqs.length === requests, "scrolling to the footer sends no live search");
+  await page.click("#loadMore");
+  await waitCards(page, firstPage + 1);
+  ok(W.searchReqs.length === requests + 1, "Load more results sends one live search");
+});
+
 // ---- run ------------------------------------------------------------------------------------------------
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-first-run", "--disable-gpu", ...(process.env.CI ? ["--no-sandbox"] : [])] });
 try {
