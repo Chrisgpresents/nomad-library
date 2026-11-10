@@ -72,6 +72,21 @@ await test("another catalog system is recognized from the link alone, with a tit
   const t = await ask("tinylib.org");
   assert.equal(t.status, 404); assert.equal(t.body.unknown, true); assert.equal(t.body.catalog.url, "https://tinylib.org");
 });
+await test("a German OCLC OPEN catalog is recognized from its link, its pages, or a library website's Katalog link", async () => {
+  internet({ "https://katalog.stadtbuecherei.frankfurt.de": { status: 403 } }, {});
+  const a = await ask("https://katalog.stadtbuecherei.frankfurt.de/Mediensuche/Einfache-Suche?id=2461829");
+  assert.equal(a.body.vendor, "open");
+  assert.equal(a.body.catalog.find, "https://katalog.stadtbuecherei.frankfurt.de/Permalink.aspx?search={q}");
+  // the catalog's bare home page: named by the OPEN scripts it loads
+  internet({ "https://katalog.stadtbuecherei.frankfurt.de": { html: '<title>Startseite - Katalogportal - Stadtbücherei Frankfurt am Main</title><script src="/DesktopModules/OCLC.OPEN.PL.DNN.BaseLibrary/x.js"></script>' } }, {});
+  const b = await ask("katalog.stadtbuecherei.frankfurt.de");
+  assert.equal(b.body.vendor, "open"); assert.equal(b.body.host, "katalog.stadtbuecherei.frankfurt.de");
+  // a library website whose "Katalog" link leads to the catalog
+  internet({ "https://stadtbuecherei.example.de": { html: '<title>Stadtbücherei Beispielstadt</title><a href="https://katalog.example.de/">Katalog</a>' },
+    "https://katalog.example.de/": { html: '<a href="http://katalog.example.de/Mediensuche/ErweiterteSuche.aspx">Erweiterte Suche</a>' } }, {});
+  const c = await ask("stadtbuecherei.example.de");
+  assert.equal(c.body.vendor, "open"); assert.equal(c.body.host, "katalog.example.de");
+});
 await test("a site that is down or slow returns a controlled answer", async () => {
   globalThis.fetch = async () => { throw new DOMException("timeout", "TimeoutError"); };
   const r = await ask("down.example.org"); assert.equal(r.status, 404); assert.equal(r.body.unsupported, true);

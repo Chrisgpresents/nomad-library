@@ -15,6 +15,7 @@ const SYSTEMS = [
   ["sierra", /\/search~S\d+|\/search\/[a-zX]\?|\/patroninfo|\/screens\/|webpac/i],
   ["carl", /ls2pac\.|carlconnect|carl\.org|[a-z0-9-]+\.tlcdelivers\.com|[?#&]section=(search|home)/i],
   ["spydus", /spydus/i],
+  ["open", /\/Mediensuche\/|\/Permalink\.aspx\?(id|search|searchhash)=|OCLC\.OPEN/i],   // OCLC OPEN (German/Austrian "Katalogportal")
   ["apollo", /biblionix\.com/i],
   ["atriuum", /booksys\.net/i],
 ];
@@ -71,6 +72,7 @@ export function readCatalogLink(input, knownSystem = "") {
     }
     case "carl": find = `${o}/?section=search&term={q}`; break;
     case "spydus": find = `${o}/cgi-bin/spydus.exe/ENQ/WPAC/BIBENQ?ENTRY={q}&ENTRY_NAME=BS&ENTRY_TYPE=K&NRECS=20`; break;
+    case "open": find = `${o}/Permalink.aspx?search={q}`; break;
     default: {
       // a catalog we don't know by name: if the link is a search, put the title where the search words were
       const key = [...qp.keys()].find(k => SEARCH_KEYS.test(k) && qp.get(k));
@@ -103,7 +105,7 @@ export function searchLink(cat, title) {
 // Library ids look like "vega.sdpl.na5.iiivega.com" ("<system>.<host>", plus "_<scope>" for some systems). BiblioCommons
 // slugs never contain a dot, so a dot is how both the page and the server tell them apart.
 export const isReaderLib = lib => typeof lib === "string" && /^[a-z0-9]+\.[a-z0-9.-]+(_[a-z0-9-]+)?$/.test(lib);
-export const READER_SYSTEMS = ["vega", "polaris", "enterprise", "carl", "spydus", "encore"];
+export const READER_SYSTEMS = ["vega", "polaris", "enterprise", "carl", "spydus", "encore", "open"];
 // A catalog link -> the id we copy it under, or "" when we can't copy that system yet.
 // These mirror libFromUrl() in nomad-library-data/readers/<system>.mjs; the copier refuses a link whose id differs.
 export function readerId(cat) {
@@ -131,6 +133,7 @@ export function readerId(cat) {
     let p = profile; try { p = decodeURIComponent(profile); } catch {}
     return clean(`enterprise.${host}_${p.replace(/[^A-Za-z0-9._-]/g, "-").toLowerCase()}`);
   }
+  if (cat.system === "open") return clean("open." + host);
   if (cat.system === "encore") return ("encore." + host).replace(/[^a-z0-9._-]/g, "");
   if (cat.system === "spydus") {
     const m = u.pathname.match(/^(.*?\/cgi-bin\/spydus\.exe)/i), prefix = m ? m[1] : "/cgi-bin/spydus.exe";
