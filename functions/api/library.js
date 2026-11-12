@@ -17,7 +17,8 @@ const KNOWN_SITES = {
 // A catalog system named in a page (also works on the "blocked" page some catalogs send programs).
 const PAGE_SIGNS = [["aspen", /aspendiscovery|Aspen Discovery/i], ["vega", /iiivega|Vega Discover/i], ["polaris", /PowerPAC|\/polaris\//i],
   ["enterprise", /SirsiDynix Enterprise|\/client\/en_US\//], ["koha", /cgi-bin\/koha|Koha online catalog/i], ["evergreen", /\/eg\/opac|Evergreen/],
-  ["encore", /\/iii\/encore/i], ["carl", /CARL[•.]?Connect|ls2pac/i]];
+  ["encore", /\/iii\/encore/i], ["carl", /CARL[•.]?Connect|ls2pac/i],
+  ["corvina", /CorvinaWeb/], ["monguz", /GenericSearch_WAR_akfweb/]];
 const systemInPage = html => (PAGE_SIGNS.find(([, re]) => re.test(html)) || [""])[0];
 const decode = t => t.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
   .replace(/&amp;/g, "&").replace(/&rsquo;|&lsquo;/g, "'").replace(/&ndash;|&mdash;/g, "-").replace(/&nbsp;/g, " ");
@@ -28,7 +29,7 @@ const nameInPage = html => {
   return part || "";
 };
 // Every address on the page that is plainly a library catalog, in page order. One cheap scan, so a big homepage stays fast.
-const CATALOG_URL = /https?:\/\/[^\s"'<>()]*?(?:bibliocommons\.com|aspendiscovery\.org|iiivega\.com|\/iii\/encore|polarislibrary\.com|\/polaris\/|\.sirsi\.net|\/client\/[a-z]{2}_[A-Z]{2}|\/eg2?\/opac|\/cgi-bin\/koha|\/search~S\d|ls2pac|biblionix\.com|booksys\.net|spydus)[^\s"'<>()]*/g;
+const CATALOG_URL = /https?:\/\/[^\s"'<>()]*?(?:bibliocommons\.com|aspendiscovery\.org|iiivega\.com|\/iii\/encore|polarislibrary\.com|\/polaris\/|\.sirsi\.net|\/client\/[a-z]{2}_[A-Z]{2}|\/eg2?\/opac|\/cgi-bin\/koha|\/search~S\d|ls2pac|biblionix\.com|booksys\.net|spydus|CorvinaWeb|\/search\/-\/search)[^\s"'<>()]*/g;
 function catalogUrls(html) {
   const out = [];
   for (const m of html.matchAll(CATALOG_URL)) { const u = decode(m[0]); if (!/gateway\.bibliocommons|cdn|assets|\.(js|css|png|jpe?g|svg|gif)(\?|$)/i.test(u) && !out.includes(u)) out.push(u); if (out.length >= 8) break; }
