@@ -1,6 +1,7 @@
 // The website check (/api/library) with the network mocked: pasting any normal library website should find the catalog.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readCatalogLink, readerId, isReaderLib, readerCatalog } from "../public/catalog.js";
 import { onRequestGet as library } from "../functions/api/library.js";
 import { onRequestPost as request } from "../functions/api/request.js";
 import { onRequestPost as notify } from "../functions/api/notify.js";
@@ -71,6 +72,28 @@ await test("another catalog system is recognized from the link alone, with a tit
   internet({ "https://tinylib.org": { html: "<title>Tiny Library</title><p>Hours</p>" } }, {});
   const t = await ask("tinylib.org");
   assert.equal(t.status, 404); assert.equal(t.body.unknown, true); assert.equal(t.body.catalog.url, "https://tinylib.org");
+});
+await test("Corvina WebPac and the Monguz portal (Szabó Ervin Library, Budapest) are recognized, each with a title search", async () => {
+  internet({}, {});
+  // not read as Sierra, even though the address has "/WebPac/"
+  const a = await ask("https://saman.fszek.hu/WebPac/CorvinaWeb?action=advancedsearchpage");
+  assert.equal(a.status, 404); assert.equal(a.body.vendor, "corvina"); assert.equal(a.body.host, "saman.fszek.hu");
+  assert.equal(a.body.catalog.find, "https://saman.fszek.hu/WebPac/CorvinaWeb?action=find&index0=ZUTY&text0={q}&textlogic0=and&pagesize=10");
+  const b = await ask("https://fszekonline.fszek.hu/search/-/search/clearform");
+  assert.equal(b.status, 404); assert.equal(b.body.vendor, "monguz"); assert.equal(b.body.host, "fszekonline.fszek.hu");
+  assert.equal(b.body.catalog.find, "https://fszekonline.fszek.hu/search?p_p_id=GenericSearch_WAR_akfweb&p_p_lifecycle=1&p_p_state=normal&p_p_mode=view&_GenericSearch_WAR_akfweb_searchType=simple&term={q}&type=allFields&dbid=solr");
+  // a library homepage that links to either one
+  internet({ "https://fszek.hu": { html: '<title>Home | Fővárosi Szabó Ervin Könyvtár</title><a href="https://fszekonline.fszek.hu/search/-/search/clearform">Katalógus</a>' } }, {});
+  const h = await ask("fszek.hu");
+  assert.equal(h.body.vendor, "monguz"); assert.match(h.body.catalog.find, /term=\{q\}/);
+});
+await test("a Corvina catalog gets a copy id the copier's reader agrees with (nomad-library-data/readers/corvina.mjs libFromUrl)", () => {
+  const id = u => readerId(readCatalogLink(u));
+  assert.equal(id("https://saman.fszek.hu/WebPac/CorvinaWeb?action=advancedsearchpage"), "corvina.saman.fszek.hu");
+  assert.equal(id("https://saman.fszek.hu/WebPac/CorvinaWeb;jsessionid=AB12?action=find"), "corvina.saman.fszek.hu");
+  assert.equal(id("https://x.hu/katalogus/CorvinaWeb"), "corvina.x.hu_katalogus-corvinaweb");
+  assert.ok(isReaderLib("corvina.saman.fszek.hu"));
+  assert.equal(readerCatalog("corvina.saman.fszek.hu").find, "https://saman.fszek.hu/WebPac/CorvinaWeb?action=find&index0=ZUTY&text0={q}&textlogic0=and&pagesize=10");
 });
 await test("a site that is down or slow returns a controlled answer", async () => {
   globalThis.fetch = async () => { throw new DOMException("timeout", "TimeoutError"); };
