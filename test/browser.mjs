@@ -7,12 +7,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 let puppeteer;
 try { puppeteer = createRequire(import.meta.url)("puppeteer-core"); }
 catch { puppeteer = createRequire(path.join(os.homedir(), "node_modules") + "/")("puppeteer-core"); }
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = path.join(ROOT, "public");
 const { shape } = await import(pathToFileURL(path.join(ROOT, "lib/core.js")).href);
 const { onRequestGet: libraryApi } = await import(pathToFileURL(path.join(ROOT, "functions/api/library.js")).href);
@@ -40,7 +40,7 @@ async function realLibraryApi(W, url) {
     return { status: res.status, body: await res.text() };
   } finally { globalThis.fetch = realFetch; }
 }
-const CHROME = process.env.CHROME_PATH || ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium"].find(p => fs.existsSync(p));
+const CHROME = process.env.CHROME_PATH || ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"].find(p => fs.existsSync(p));
 const FIXTURE_DIR = process.env.FIXTURE_DIR || "";
 const ONLY = process.argv[2] || "";
 const HOST = "library.nomadovernormal.com", SNAPHOST = "nomad-library-copies.pages.dev";
@@ -724,6 +724,41 @@ scenario("a Vega catalog: not copied yet = popular shelf + one copy request, the
   await p3.click("#grid .card .cover"); await sleep(400);
   const t3 = await p3.$eval("#detailBody", e => e.textContent);
   ok(!/All checked out|Get in line|Place a hold/.test(t3) && /See it at/.test(t3), "movie page: no shelf status, a plain 'See it at' link");
+});
+
+scenario("an Aspen catalog: not copied yet = popular shelf + one copy request, then its own shelf when the copy lands", async b => {
+  const ID = "aspen.roxbury.aspendiscovery.org";
+  const rows = makeRows("a", 60).map((r, i) => { r[0] = `gw-${i}`; r[6] = 0; return r; });
+  const body = zlib.gzipSync(JSON.stringify({ ver: Date.now(), finished: Date.now(), total: rows.length, sc: "", na: 1, rec: "https://roxbury.aspendiscovery.org/GroupedWork/{id}", sys: "aspen", rows }));
+  const W = world();
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#pickInput", { visible: true });
+  await page.type("#pickInput", "https://roxbury.aspendiscovery.org/?browseCategory=x"); await page.evaluate(() => document.querySelector("#pickForm").requestSubmit());
+  await page.waitForSelector("#guestIntro[open]", { timeout: 8000 });
+  const intro = await page.$eval("#guestIntro", e => e.textContent.replace(/\s+/g, " "));
+  ok(/We're copying Roxbury's shelves now/.test(intro) && /within the hour/.test(intro), `the pop-up says it's being copied: "${intro.slice(2, 70)}"`);
+  await waitCards(page, 12); await sleep(800);
+  ok(/popular movies/.test(await status(page)), "meanwhile: the popular shelf");
+  ok(W.wants.filter(w => w === ID).length === 1, `one copy request for ${ID} (${JSON.stringify(W.wants)})`);
+  ok(W.searchReqs.length === 0 && W.availReqs.length === 0, "no BiblioCommons live calls for an Aspen library");
+  W.snap[ID] = { body };
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await openSaved(page);
+  await page.waitForFunction(() => /titles/.test(document.querySelector("#status")?.textContent || ""), { timeout: 15000 });
+  await waitCards(page, 12);
+  ok(/\d+ titles/.test(await status(page)), `its own shelf: "${(await status(page)).slice(0, 40)}"`);
+  ok(await page.evaluate(() => JSON.parse(localStorage.getItem("nl")).lib) === ID, "the saved library is now the Aspen library");
+  await page.click("#grid .card .cover"); await sleep(400);
+  const see = await page.$eval("#detailBody", e => [...e.querySelectorAll("a.btn")].find(a => /See it at/.test(a.textContent))?.href);
+  ok(see && see.startsWith("https://roxbury.aspendiscovery.org/GroupedWork/gw-"), `the record link opens at the library (${see})`);
+  const text = await page.$eval("#detailBody", e => e.textContent);
+  ok(!/All checked out|Get in line|Place a hold/.test(text), "no invented shelf status");
+  await page.evaluate(() => document.querySelector("#detail").close()); await sleep(300);
+  await page.type("#q", "movie 3"); await sleep(600);
+  const sl = await page.$eval("#status a", a => a.href).catch(() => "");
+  ok(sl.startsWith("https://roxbury.aspendiscovery.org/Search/Results?lookfor=movie%203"), `searching offers the library's own catalog (${sl})`);
+  ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
 });
 
 scenario("finding your library: paste any catalog link or website, no second paste", async b => {
