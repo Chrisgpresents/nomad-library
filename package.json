@@ -3,7 +3,7 @@
     "data": "tools/fetch_data.sh",
     "db": "wrangler d1 execute nomad-library --local --file schema.sql",
     "dev": "wrangler pages dev public",
-    "test": "node --test test/resolver.mjs && node test/browser.mjs"
+    "test": "node --test test/catalog.mjs && node --test test/resolver.mjs && node test/browser.mjs"
   },
   "dependencies": { "@simplewebauthn/server": "14.0.3" },
   "devDependencies": { "puppeteer-core": "24.42.0", "wrangler": "4.45.0" } }

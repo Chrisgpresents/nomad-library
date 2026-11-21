@@ -1442,7 +1442,7 @@ function enterGuest(info) {
   if (!pickingForAccount) guestIntro();
   libraryPicked();
 }
-// A catalog we copy ourselves (Vega so far). If its copy exists it opens like any library. If not, the copier is asked
+// A catalog we copy ourselves (a reader in nomad-library-data, including Aspen). If its copy exists it opens like any library. If not, the copier is asked
 // for it and the visitor browses popular movies (Check at searches their catalog) until it's ready, usually within the hour.
 const copyReady = async id => {
   try { if (await idbGet(id)) return true; } catch {}

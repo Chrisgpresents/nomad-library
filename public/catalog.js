@@ -103,7 +103,7 @@ export function searchLink(cat, title) {
 // Library ids look like "vega.sdpl.na5.iiivega.com" ("<system>.<host>", plus "_<scope>" for some systems). BiblioCommons
 // slugs never contain a dot, so a dot is how both the page and the server tell them apart.
 export const isReaderLib = lib => typeof lib === "string" && /^[a-z0-9]+\.[a-z0-9.-]+(_[a-z0-9-]+)?$/.test(lib);
-export const READER_SYSTEMS = ["vega", "polaris", "enterprise", "carl", "spydus", "encore"];
+export const READER_SYSTEMS = ["vega", "polaris", "enterprise", "carl", "spydus", "encore", "aspen"];
 // A catalog link -> the id we copy it under, or "" when we can't copy that system yet.
 // These mirror libFromUrl() in nomad-library-data/readers/<system>.mjs; the copier refuses a link whose id differs.
 export function readerId(cat) {
@@ -137,6 +137,12 @@ export function readerId(cat) {
     return ("spydus." + host + (prefix === "/cgi-bin/spydus.exe" ? "" : "_" + prefix.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase())).replace(/[^a-z0-9._-]/g, "");
   }
   if (cat.system === "carl") return /^(www\.)?tlcdelivers\.com$/.test(host) ? "" : clean("carl." + host);   // tlcdelivers.com itself is the vendor's site
+  if (cat.system === "aspen") {
+    const h = host.replace(/^www\./, "");
+    // aspendiscovery.org itself is the vendor's site. Must match libFromUrl in nomad-library-data/readers/aspen.mjs.
+    if (h === "aspendiscovery.org" || /^(help|community|dev)\.aspendiscovery\.org$/.test(h)) return "";
+    return ("aspen." + h).replace(/[^a-z0-9._-]/g, "");
+  }
   return "";
 }
 // The link the copier reads this library from.
