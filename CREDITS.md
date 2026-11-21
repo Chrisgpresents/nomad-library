@@ -6,7 +6,11 @@ Nomad Library is made by [Nomad Over Normal](https://www.youtube.com/@NomadOverN
 
 Everyone whose change was merged is listed here, newest first. GitHub also keeps the [full contributor list](https://github.com/Chrisgpresents/nomad-library/graphs/contributors).
 
-_Your name could be first._
+- [@juliusbenedikt](https://github.com/juliusbenedikt): German and Austrian OCLC OPEN catalogs, link recognition and the copier's reader (#98, data #2)
+- [@natedob](https://github.com/natedob): the Budapest catalogs, Corvina WebPac and the Monguz portal, with the Corvina reader (#100, data #3)
+- [@payne8](https://github.com/payne8): the Aspen Discovery reader in the copier (data #4)
+- [@ShahadatTest](https://github.com/ShahadatTest): a Load more button so the footer can be reached, and a square logo on phones (#97, #96)
+- [@AlainSuarez](https://github.com/AlainSuarez): renaming saved libraries, and shared links that open a guest library's shelf (#94, #95)
 
 ## Thanks also to
 
