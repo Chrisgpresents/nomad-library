@@ -995,8 +995,11 @@ $("#filtBody").addEventListener("input", e => {
   } else if (t.id === "minR") { S.minR = +t.value; $("#mro").textContent = S.minR ? "★ " + S.minR : "any"; filtChanged(false); }
   else if (t.id === "onShelfF") { S.onShelf = t.checked; filtChanged(false); }
 });
-$("#filters").addEventListener("close", () => { liveQ = false; reload(); });
-$("#filtBtn").onclick = openFilters;
+// closing Filters without changing anything keeps the titles already loaded (#54)
+const filterState = () => JSON.stringify([S.genres, S.coll, S.plat, S.y0, S.y1, S.minR, S.onShelf]);
+let filtersAtOpen = "";
+$("#filters").addEventListener("close", () => { if (filterState() === filtersAtOpen && !liveQ) return; liveQ = false; reload(); });
+$("#filtBtn").onclick = () => { filtersAtOpen = filterState(); openFilters(); };
 $("#active").addEventListener("click", e => { const b = e.target.closest("[data-clear]"); if (b) { clearFilter(b.dataset.clear); save(); reload(); } });
 $("#more").addEventListener("click", async e => {
   if (e.target.id !== "loadMore") return;
