@@ -15,7 +15,7 @@ export async function onRequestPut({ request, env }) {
   const uid = await liveUser(env, request);
   if (!uid) return json({ error: "Sign in first." }, { status: 401, headers: { "set-cookie": CLEAR_SESSION } });
   const text = await request.text();
-  if (text.length > 200000) return json({ error: "That's more than an account can hold." }, { status: 413 });
+  if (text.length > 1500000) return json({ error: "That's more than an account can hold." }, { status: 413 });
   let body;
   try { body = JSON.parse(text); } catch { return json({ error: "Bad data" }, { status: 400 }); }
   await env.DB.prepare("UPDATE users SET data = ?, updated = ? WHERE id = ?")

@@ -44,7 +44,13 @@ function flushSave() {
 }
 addEventListener("pagehide", flushSave);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushSave(); });
-const synced = () => ({ ...(S.demo ? {} : { lib: S.lib, libName: S.libName, ...(S.lib === "shelf" ? { guest: S.guest } : {}) }), libs: S.libs, fmt: S.fmt, faves: S.faves, watch: S.watch });
+// An account keeps favorites slim and the watchlist without its matches (those are rebuilt on the device): whole
+// rows made ~80 favorites overflow the account and stop saving (feedback 255).
+const FAV_KEYS = ["id", "rid", "title", "sub", "f", "fmt", "fmts", "disc", "img", "avail", "holds", "genres", "tv", "plat", "r", "v", "imdb", "fy", "url", "lib", "added"];
+const slimFav = r => { const o = {}; for (const k of FAV_KEYS) if (r[k] != null && r[k] !== "") o[k] = r[k];
+  if (r.eds?.length > 1) o.eds = r.eds.map(e => ({ id: e.id, rid: e.rid, lib: e.lib, fmt: e.fmt, url: e.url, avail: e.avail, holds: e.holds, disc: e.disc })); return o; };
+const synced = () => ({ ...(S.demo ? {} : { lib: S.lib, libName: S.libName, ...(S.lib === "shelf" ? { guest: S.guest } : {}) }), libs: S.libs, fmt: S.fmt,
+  faves: Object.fromEntries(Object.entries(S.faves).map(([k, r]) => [k, slimFav(r)])), watch: S.watch && { ...S.watch, matches: undefined } });
 
 function toast(msg) {
   const t = document.createElement("div");
@@ -252,7 +258,7 @@ function openDetail(r) {
             : isMine() ? holdButtons(r)
             : `<a class="btn" href="${esc((r.eds?.find(e => e.avail) || r).url)}" target="_blank" rel="noopener noreferrer">${noAvail() ? `See it at ${esc(shortName(libLabel()))}` : r.avail ? "Place a hold" : "Get in line"}</a>`}
           ${isMine() ? guestLibs().map(e => `<a class="btn ghost" href="${esc(searchLink(e.guest.catalog, r.title))}" target="_blank" rel="noopener noreferrer">Check at ${esc(shortName(e.name) || "your other library")}</a>`).join("") : ""}
-          <a class="btn ghost" href="/t?q=${encodeURIComponent(r.title + " " + (r.fy || ""))}" target="_blank" rel="noopener noreferrer" data-trailer>Trailer</a>
+          <a class="btn ghost" href="/t?q=${encodeURIComponent(r.f === "g" ? r.title : r.title + " " + (r.fy || ""))}${r.f === "g" ? "&g=1" : ""}" target="_blank" rel="noopener noreferrer" data-trailer>Trailer</a>
           ${imdb}
           ${r.imdb && r.f !== "g" && !isTV(r) ? `<a class="btn ghost" href="https://letterboxd.com/imdb/${esc(r.imdb)}/" target="_blank" rel="noopener noreferrer">Letterboxd</a>` : ""}
           <button class="btn ghost" data-fav="${esc(r.id)}">${isFav(r) ? "♥ Saved" : "♡ Save"}</button>
@@ -326,7 +332,7 @@ function toggleFav(id) {
   if (!r) return;
   const k = favKey(r);
   if (S.faves[k]) delete S.faves[k];
-  else S.faves[k] = { ...r, lib: r.lib || S.lib, added: Date.now() };
+  else S.faves[k] = slimFav({ ...r, lib: r.lib || S.lib, added: Date.now() });
   save();
   document.querySelectorAll(`[data-fav="${CSS.escape(id)}"]`).forEach(b => {
     b.setAttribute("aria-pressed", isFav(r));
@@ -779,7 +785,9 @@ function openCopy(lib) {
       if (r.d) { idbPut(lib, r.d); arrive(r.d); return; }
       clearTimeout(timer);
       if (isReaderLib(lib)) { settle(null); if (lib === S.lib) enterReader({ name: S.libName, catalog: readerCatalog(lib, libUrlOf(lib)) }, lib); return; }   // its copy is gone: wait on the popular shelf
-      wantCopy(lib); live("missing"); readCopyProgress(lib);
+      // a BiblioCommons library with no copy yet: the gateway stopped answering our server (11.2026), so it can't be
+      // browsed live. The popular shelf stands in (Check at searches its catalog) until its own copy lands.
+      settle(null); if (lib === S.lib) enterReader({ name: S.libName, catalog: bcCatalog(lib) }, lib);
     } catch (e) {
       clearTimeout(timer); wantCopy(lib); live("error");
     }
@@ -883,6 +891,7 @@ async function reload() {
     $("#grid").innerHTML = ""; $("#status").textContent = "Opening your library…"; $("#more").textContent = "";
     await loadSnap();
     if (S.lib !== lib) return;      // switched libraries while waiting: the newer reload owns the screen
+    if (!SNAP || SNAP.lib !== lib) return;   // no copy: the waiting shelf (enterReader) takes over, never a live search
   }
   paintCopyToast();
   if (instant()) {
@@ -1463,10 +1472,17 @@ function requestLibrary(info) {
     body: JSON.stringify({ name: info.name || "", host: info.catalog?.host || info.host || "", vendor: info.catalog?.system || "", url }) })
     .then(r => { if (r.ok) try { localStorage.setItem("nl-req-" + key, String(Date.now())); } catch {} }).catch(() => sentRequests.delete(key));
 }
+// The id a catalog is copied under: a reader id, or a BiblioCommons slug
+function copyIdOf(cat) {
+  if (cat?.system === "bibliocommons") { const m = String(cat.host || "").match(/^([a-z0-9-]+)\.bibliocommons\.com$/); return m ? m[1] : ""; }
+  return readerId(cat);
+}
+const bcCatalog = slug => ({ url: `https://${slug}.bibliocommons.com/`, host: `${slug}.bibliocommons.com`, system: "bibliocommons",
+  find: `https://${slug}.bibliocommons.com/v2/search?query={q}&searchType=smart&f_FORMAT=DVD%7CBLURAY` });
 // Movies to browse for a library we cannot read; every "Check at" button searches the library's own catalog.
 function enterGuest(info) {
   const cat = info.catalog?.url ? info.catalog : null;
-  const rid = readerId(cat);
+  const rid = copyIdOf(cat);
   if (rid) return enterReader(info, rid);
   S.guest = { name: info.name || "", catalog: cat };
   S.lib = GUEST; S.libName = S.guest.name; S.demo = false; S.shelf = "all"; S.sort = "pop"; clearFilter("all"); S.fmt = "all";
@@ -1500,14 +1516,14 @@ async function enterReader(info, id) {
 }
 function openReaderLib(id, name, url) {
   // the waiting guest entry for this catalog becomes the real library
-  S.libs = S.libs.filter(e => !(e.lib === GUEST && readerId(e.guest?.catalog) === id));
+  S.libs = S.libs.filter(e => !(e.lib === GUEST && copyIdOf(e.guest?.catalog) === id));
   S.libUrl = url || libUrlOf(id); S.lib = id; S.libName = name || S.libs.find(e => e.lib === id)?.name || ""; S.demo = false; S.shelf = "all"; S.sort = ""; clearFilter("all"); S.fmt = "all";
   rememberLib(); save(); boot();
 }
 // A visitor waiting on a copy: when it's ready, move them onto their library's own shelf.
 let upgradeChecked = "";
 async function upgradeGuest() {
-  const cat = guestCatalog(), id = S.guest?.noCopy ? "" : readerId(cat);
+  const cat = guestCatalog(), id = S.guest?.noCopy ? "" : copyIdOf(cat);
   if (!id || upgradeChecked === id) return;
   upgradeChecked = id;
   if (!(await copyReady(id))) {
@@ -1519,7 +1535,7 @@ async function upgradeGuest() {
     } catch {}
     return;
   }
-  if (!isGuest() || readerId(guestCatalog()) !== id) return;
+  if (!isGuest() || copyIdOf(guestCatalog()) !== id) return;
   openReaderLib(id, S.libName, readerUrl(cat));
   toast(`${S.libName || "Your library"}'s own shelf is ready.`);
 }
@@ -1529,7 +1545,7 @@ function guestIntro() {
   try { if (localStorage.getItem(key)) return; localStorage.setItem(key, "1"); } catch {}
   const who = S.libName || "Your library", at = libLabel();
   $("#guestIntroBody").innerHTML = `<div class="in acct-body"><button class="x" data-close aria-label="Close">×</button>
-    ${cat && readerId(cat) && !S.guest?.noCopy ? `<h2>We're copying ${esc(S.libName ? S.libName + "'s" : "your library's")} shelves now</h2>
+    ${cat && copyIdOf(cat) && !S.guest?.noCopy ? `<h2>We're copying ${esc(S.libName ? S.libName + "'s" : "your library's")} shelves now</h2>
       <p>It's usually ready within the hour, and this page switches to your library's own movies by itself.</p>
       <p>Until then, here are popular movies from libraries across the country. Tap any movie, then <b>Check at ${esc(at)}</b> to search your library for it.</p>`
     : cat ? `<h2>We can't read ${esc(S.libName ? S.libName + "'s" : "your library's")} catalog yet</h2>
@@ -1826,7 +1842,7 @@ document.addEventListener("click", async e => {
   body.innerHTML = `<div class="frame"><div class="tr-msg">Finding the trailer…</div></div>${bar(a.href)}`;
   box.showModal();
   try {
-    const d = await (await fetch("/t?format=json&q=" + encodeURIComponent(q), { signal: AbortSignal.timeout(12000) })).json();
+    const d = await (await fetch("/t?format=json&q=" + encodeURIComponent(q) + (new URL(a.href).searchParams.get("g") === "1" ? "&g=1" : ""), { signal: AbortSignal.timeout(12000) })).json();
     if (!box.open) return;
     body.innerHTML = d.vid
       ? `<div class="frame"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(d.vid)}?autoplay=1&rel=0&modestbranding=1" title="Trailer" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>${bar("https://www.youtube.com/watch?v=" + d.vid)}`

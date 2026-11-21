@@ -444,32 +444,31 @@ scenario("old device copy (30 days) still opens immediately offline; refreshes w
   ok(/3,500 titles/.test(s3) || /3,[45]\d\d titles/.test(s3), `the background refresh was saved (${s3.slice(0, 30)})`);
 });
 
-scenario("uncopied library: live shelf quickly, one 'wanted' note, no loops", async b => {
+scenario("uncopied BiblioCommons library: popular shelf at once, one copy request, its own shelf when the copy lands", async b => {
+  // the gateway refuses our server since 11.2026, so a library without a copy can't be browsed live any more
   const W = world({});
-  const { page, context } = await newPage(b, W);
+  const { page } = await newPage(b, W);
   await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
   const t0 = Date.now(); await pickLibrary(page, "beta");
-  const t = await waitCards(page, 12);
-  note("uncopied library first live shelf (ms)", Date.now() - t0);
-  ok(Date.now() - t0 < 3500, `live shelf starts promptly (${Date.now() - t0} ms)`);
-  await sleep(600);
-  const toast = await page.$eval("#copyToast", e => ({ text: e.textContent, r: e.getBoundingClientRect().toJSON(), vw: innerWidth, vh: innerHeight })).catch(() => null);
-  ok(toast && /library's filling in\. You can browse while we prepare the full collection/.test(toast.text), `corner card says it: "${toast?.text.slice(0, 90)}"`);
-  ok(toast && toast.r.right > toast.vw - 40 && toast.r.bottom > toast.vh - 40 && toast.r.right <= toast.vw, `card sits in the lower right (right ${Math.round(toast?.r.right)} of ${toast?.vw}, bottom ${Math.round(toast?.r.bottom)} of ${toast?.vh})`);
-  ok(!/filling in/.test(await status(page)) && /^\d+ titles/.test((await status(page)).trim()), `status line is just the count: "${(await status(page)).trim()}"`);
-  ok(!/\d{3,} (hours|minutes)|tomorrow/.test(toast?.text || ""), "no promised time");
-  await page.click("#copyToast [data-ct-close]"); await sleep(150);
-  ok(!(await page.$("#copyToast")), "dismiss closes the card");
-  await page.evaluate(() => document.querySelector("#sort").dispatchEvent(new Event("change", { bubbles: true }))); await sleep(900);
-  ok(!(await page.$("#copyToast")), "it stays dismissed for this library while browsing");
-  ok(W.wants.length === 1 && W.wants[0] === "beta", `registered once (${W.wants.length})`);
-  const before = W.snapReqs.length;
-  await sleep(2500);
-  ok(W.snapReqs.length === before && W.snapReqs.length <= 2, `no copy-host request loop (${W.snapReqs.length} requests)`);
-  await page.close();
-  const p2 = (await newPage(b, W, { ctx: context })).page;
-  await p2.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" }); await openSaved(p2); await waitCards(p2, 12); await sleep(500);
-  ok(W.wants.length === 1, "a second visit the same day does not register again");
+  await page.waitForSelector("#guestIntro[open]", { timeout: 8000 });
+  const intro = await page.$eval("#guestIntro", e => e.textContent.replace(/\s+/g, " "));
+  ok(/We're copying/.test(intro), `the pop-up says it's being copied: "${intro.slice(2, 70)}"`);
+  await page.evaluate(() => document.querySelector("#guestIntro").close());
+  await waitCards(page, 12);
+  note("uncopied library first shelf (ms)", Date.now() - t0);
+  ok(Date.now() - t0 < 4000, `a shelf right away (${Date.now() - t0} ms)`);
+  ok(/popular movies/.test(await status(page)), "meanwhile: the popular shelf");
+  await page.click("#grid .card .cover"); await sleep(400);
+  const check = await page.$eval("#detailBody", e => [...e.querySelectorAll("a.btn")].find(a => /Check at/.test(a.textContent))?.href);
+  ok(check && check.startsWith("https://beta.bibliocommons.com/v2/search?query="), `Check at searches the library's own catalog (${check})`);
+  await page.evaluate(() => document.querySelector("#detail").close()); await sleep(300);
+  ok(W.wants.filter(w => w === "beta").length === 1, `one copy request (${JSON.stringify(W.wants)})`);
+  ok(W.searchReqs.length === 0, "no live gateway search");
+  W.snap.beta = { body: snapBody(makeRows("beta", 60)) };
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await openSaved(page).catch(() => {});
+  await page.waitForFunction(() => /\d+ titles/.test(document.querySelector("#status")?.textContent || ""), { timeout: 15000 });
+  ok(await page.evaluate(() => JSON.parse(localStorage.getItem("nl")).lib) === "beta", "once the copy lands, the library's own shelf");
   ok(W.oldSnapCalls === 0, "old /api/snap never called");
 });
 
@@ -556,19 +555,6 @@ scenario("rapid library switching: a slow copy for the library you left never re
   const t = await titles(page);
   ok(t.every(x => x.includes("BETA")), `still showing Beta after Alpha's copy arrived (${t[0]})`);
   ok(await page.$eval("#libBtn", e => /Beta/.test(e.textContent)), "header still names Beta");
-});
-
-scenario("live failure does not retry forever; Try again works", async b => {
-  const W = world({ searchFail: true });
-  const { page } = await newPage(b, W);
-  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
-  await pickLibrary(page, "gamma"); await sleep(5000);
-  const n1 = W.searchReqs.length;
-  ok(n1 >= 1 && n1 <= 3, `a failed first page is not retried in a loop (${n1} requests in 5 s)`);
-  ok(!!(await page.$("#retryMore")), "a Try again button is shown");
-  W.searchFail = false;
-  await page.click("#retryMore"); await waitCards(page, 12, 8000);
-  ok(true, "Try again loads the shelf");
 });
 
 scenario("favorites, watchlist and account state: a signed-in account's data is shown and saved, nothing is deleted", async b => {
@@ -903,9 +889,9 @@ scenario("narrow phone layout: no sideways scrolling on home, shelf, detail", as
   ok(lm.l >= -1 && lm.r <= lm.w + 1, `library list fits the screen (${Math.round(lm.l)}..${Math.round(lm.r)} of ${lm.w})`);
   await page.evaluate(() => document.querySelector("#addLib")?.click());
   await page.waitForSelector("#pickInput", { visible: true }); await page.type("#pickInput", "https://beta.bibliocommons.com/"); await page.evaluate(() => document.querySelector("#pickForm").requestSubmit());
-  await page.waitForSelector("#copyToast", { timeout: 8000 });
-  const m = await page.$eval("#copyToast", e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight }; });
-  ok(m.l >= 0 && m.r <= m.w && m.b <= m.h, `corner card fits a phone screen (${Math.round(m.l)}..${Math.round(m.r)} of ${m.w})`);
+  await page.waitForSelector("#guestIntro[open]", { timeout: 8000 });
+  const m = await page.$eval("#guestIntro", e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight }; });
+  ok(m.l >= -1 && m.r <= m.w + 1 && m.b <= m.h + 1, `the copying pop-up fits a phone screen (${Math.round(m.l)}..${Math.round(m.r)} of ${m.w})`);
   try { await page.screenshot({ path: path.join(os.tmpdir(), "nl-mobile-toast.png") }); } catch {}
 });
 
@@ -988,23 +974,6 @@ scenario("shelf pagination: scrolling loads by itself for a few pages, then a bu
   await more.click();
   await waitCards(page, auto + 1);
   ok(await cards(page) > auto, "Load more results appends the next page");
-});
-
-scenario("shelf pagination requests live results only when asked", async b => {
-  const W = world();
-  const { page } = await newPage(b, W);
-  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
-  await pickLibrary(page, "gamma");
-  await waitCards(page, 12);
-  await page.waitForSelector("#loadMore");
-  const firstPage = await cards(page);
-  const requests = W.searchReqs.length;
-  await page.$eval(".foot", e => e.scrollIntoView({ block: "end" }));
-  await sleep(750);
-  ok(W.searchReqs.length === requests, "scrolling to the footer sends no live search");
-  await page.click("#loadMore");
-  await waitCards(page, firstPage + 1);
-  ok(W.searchReqs.length === requests + 1, "Load more results sends one live search");
 });
 
 // ---- run ------------------------------------------------------------------------------------------------

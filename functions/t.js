@@ -33,12 +33,14 @@ export async function onRequestGet(ctx) {
   const u = new URL(ctx.request.url);
   const q = (u.searchParams.get("q") || "").trim().slice(0, 140);
   const asJson = u.searchParams.get("format") === "json";
-  const search = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + " trailer");
+  // games (&g=1) search for the game's trailer, so a fan film with the same name loses (feedback 260)
+  const game = u.searchParams.get("g") === "1";
+  const search = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q + (game ? " game trailer" : " trailer"));
   const answer = vid => asJson
     ? new Response(JSON.stringify({ vid, search }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=3600" } })
     : Response.redirect(vid ? `https://www.youtube.com/watch?v=${vid}` : search, 302);
   if (!q) return answer("");
-  const key = new Request("https://nomad-library.cache/t3/" + encodeURIComponent(q.toLowerCase()));
+  const key = new Request("https://nomad-library.cache/t3/" + (game ? "g/" : "") + encodeURIComponent(q.toLowerCase()));
   const hit = await caches.default.match(key);
   let vid = hit ? await hit.text() : null;
   if (!hit) {
