@@ -213,13 +213,14 @@ function remember(rows) { for (const r of rows) rowsById.set(r.id, r); return ro
 
 // One card per film: the library often has the DVD, the Blu-ray and a reissue as separate records.
 const filmKey = r => norm(r.title) + "|" + (r.imdb || r.disc || "") + "|" + (r.tv ? norm(r.sub) : "");
-function edition(r) { return { id: r.id, rid: r.rid || r.id, lib: r.lib || S.lib, fmt: r.fmt, url: r.url, avail: r.avail, copies: r.copies, total: r.total, holds: r.holds, img: r.img, disc: r.disc }; }
+function edition(r) { return { id: r.id, rid: r.rid || r.id, lib: r.lib || S.lib, fmt: r.fmt, url: r.url, avail: r.avail, copies: r.copies, total: r.total, holds: r.holds, img: r.img, disc: r.disc, at: r.at }; }
 function absorb(into, r) {
   into.eds = into.eds || [edition(into)];
   if (into.eds.some(e => e.id === r.id)) return;
   into.eds.push(edition(r));
   into.avail = into.eds.some(e => e.avail);
   into.holds = into.eds.reduce((n, e) => n + (e.holds || 0), 0);
+  if (r.at && (!into.at || r.at < into.at)) into.at = r.at;
   into.fmts = [...new Set(into.eds.map(e => e.fmt))].sort().reverse().join(" + ");
   into.fs = (into.fs || into.f || "") + (r.f || "");
   if (!into.img && r.img) into.img = r.img;
@@ -239,8 +240,10 @@ function openDetail(r) {
   const yearNote = r.fy && r.disc && r.fy !== r.disc && !isGuest() ? `<b>${r.fy}</b> film, ${r.disc} disc` : `<b>${esc(filmYear(r))}</b>`;
   const fmtLabel = isGuest() ? "" : r.fmts || r.fmt;
   const imdb = r.imdb ? `<a class="btn ghost" href="https://www.imdb.com/title/${esc(r.imdb)}/" target="_blank" rel="noopener noreferrer">IMDb ${r.r ? r.r.toFixed(1) : ""}</a>` : "";
-  const av = r.avail ? `<b style="color:var(--ok)">On the shelf</b>${r.eds || r.copies == null ? "" : ` · ${r.copies} of ${r.total} in`}`
-    : `<b style="color:var(--stamp)">All checked out</b>${r.holds ? ` · ${r.holds} on hold` : ""}`;
+  // a copy's status is only as fresh as the day it was read; the live check below replaces it with "right now" when it can
+  const when = r.live ? "" : r.at ? ` <span class="dim">· as of ${asOf(r.at)}</span>` : "";
+  const av = (r.avail ? `<b style="color:var(--ok)">On the shelf</b>${r.eds || r.copies == null ? "" : ` · ${r.copies} of ${r.total} in`}`
+    : `<b style="color:var(--stamp)">All checked out</b>${r.holds ? ` · ${r.holds} on hold` : ""}`) + when;
   $("#detailBody").innerHTML = `<div class="in">
     <button class="x" data-close aria-label="Close">×</button>
     <div class="d">
@@ -315,7 +318,7 @@ async function liveStatus(r) {
     let any = false, copies = 0, total = 0, holds = 0;
     for (const e of eds) { const a = d[e.id]; if (!a) continue; Object.assign(e, a); any = any || a.avail; copies += a.copies; total += a.total; holds += a.holds; }
     if (!Object.keys(d).length) return;
-    Object.assign(r, { avail: any, copies, total, holds });
+    Object.assign(r, { avail: any, copies, total, holds, live: true });
     if (!$("#detail").open || S.lib !== lib || $("#detailBody").dataset.record !== r.id) return;
     const el = $("#liveAv");
     if (el) el.innerHTML = any ? `<b style="color:var(--ok)">On the shelf right now</b> · ${copies} of ${total} in`
@@ -647,14 +650,29 @@ function wantCopy(lib, name, url) {
     });
 }
 
+// When each row's shelf status was read: the top-up batches (adds, newest first) cover the first rows, the rest
+// carry the full copy's. Copies topped before adds existed get their one batch from the row order (Blu-ray, DVD,
+// games; the first step backwards is where the full copy starts), as the copier does.
+const RANK = { b: 0, d: 1, g: 2 };
+function statusTimes(d) {
+  const full = d.full || d.finished;
+  let adds = Array.isArray(d.adds) ? d.adds : [];
+  if (!Array.isArray(d.adds) && d.full && d.finished > d.full)
+    for (let i = 1; i < d.rows.length; i++) if (RANK[d.rows[i][3]] < RANK[d.rows[i - 1][3]]) { adds = [[d.finished, i]]; break; }
+  let i = 0, b = 0, end = adds.length ? adds[0][1] : 0;
+  return () => { while (b < adds.length && i >= end) { b++; end += b < adds.length ? adds[b][1] : 0; } i++; return b < adds.length ? adds[b][0] : full; };
+}
+const asOf = t => t ? new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+
 function buildSnap(lib, d) {
-  const films = [], games = [], seenF = new Map();
+  const films = [], games = [], seenF = new Map(), at = statusTimes(d);
   for (const x of d.rows) {
     const r = fromRow(x, lib, d.sc, d.rec);
+    r.at = at();
     rowsById.set(r.id, r);
     if (r.f === "g") games.push(r); else films.push(r);
   }
-  return { lib, ver: d.ver || d.finished, finished: d.finished, films: merge(films, seenF), games, na: !!d.na };
+  return { lib, ver: d.ver || d.finished, finished: d.finished, shelfAt: d.full || d.finished, films: merge(films, seenF), games, na: !!d.na };
 }
 
 // Everyone asking for the same library shares one attempt; a failed attempt is remembered for 5 minutes so
@@ -666,7 +684,7 @@ let snapping = null, LATE = null;
 // yet are left out and named above the movies. Never browses live, so collections and whole-catalog search are off here.
 async function openMine() {
   const libs = readableLibs(), films = [], games = [], missing = [];
-  let finished = Infinity;
+  let finished = Infinity, shelfAt = Infinity;
   await Promise.all(libs.map(async e => {
     let d = null;
     try {
@@ -675,15 +693,17 @@ async function openMine() {
       else { const r = await fetchStatic(e.lib); if (r.d) { d = r.d; idbPut(e.lib, d); } else wantCopy(e.lib); }
     } catch {}
     if (!d) { missing.push(e.name || e.lib); return; }
-    finished = Math.min(finished, d.finished);
+    finished = Math.min(finished, d.finished); shelfAt = Math.min(shelfAt, d.full || d.finished);
+    const at = statusTimes(d);
     for (const x of d.rows) {
       const r = fromRow(x, e.lib, d.sc, d.rec);
+      r.at = at();
       r.rid = r.id; r.id = e.lib + "~" + r.id;
       rowsById.set(r.id, r);
       (r.f === "g" ? games : films).push(r);
     }
   }));
-  const snap = { lib: MINE, ver: "mine-" + libs.map(e => e.lib).join("+"), finished: Number.isFinite(finished) ? finished : Date.now(), films: merge(films, new Map()), games, missing, libs: libs.length };
+  const snap = { lib: MINE, ver: "mine-" + libs.map(e => e.lib).join("+"), finished: Number.isFinite(finished) ? finished : Date.now(), shelfAt: Number.isFinite(shelfAt) ? shelfAt : Date.now(), films: merge(films, new Map()), games, missing, libs: libs.length };
   if (isMine()) SNAP = snap;
   return snap;
 }
@@ -848,7 +868,7 @@ function snapRender() {
   snapList = snapSort(snapFilter());
   snapShown = 0;
   $("#grid").innerHTML = "";
-  const when = new Date(SNAP.finished).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const when = asOf(SNAP.shelfAt || SNAP.finished);
   const q = $("#q").value.trim();
   if (isGuest()) {
     // a reminder that stays put: these are popular movies, and Check opens the visitor's own catalog
@@ -859,7 +879,7 @@ function snapRender() {
   } else
   $("#status").innerHTML = `${snapList.length.toLocaleString()} ${S.fmt === "games" ? "games" : "titles"}` +
     (isMine() ? ` from ${SNAP.libs} ${SNAP.libs === 1 ? "library" : "libraries"}` : "") +
-    (S.onShelf ? ` <span class="dim">· shelf status from ${when}</span>` : "") +
+    (noAvail() ? "" : ` <span class="dim">· shelf status as of ${when}</span>`) +
     (q && isReaderLib(S.lib) ? ` · <a href="${esc(searchLink(readerCatalog(S.lib, libUrlOf(S.lib)), q))}" target="_blank" rel="noopener noreferrer">Search ${esc(libLabel())} for “${esc(q)}”</a>` : "") +
     // the library gateway no longer answers our server, so a whole-catalog search opens the library's own site
     (q && !isMine() && !isReaderLib(S.lib) ? ` · <a href="https://${esc(S.lib)}.bibliocommons.com/v2/search?query=${encodeURIComponent(q)}&searchType=smart&f_FORMAT=DVD%7CBLURAY" target="_blank" rel="noopener noreferrer">Search ${esc(libLabel())} for “${esc(q)}”</a>` : "") +

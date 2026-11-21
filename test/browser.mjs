@@ -153,6 +153,7 @@ async function newPage(browser, W, { ctx, seedState, idbBroken, viewport, askEma
           if (W.searchDelay) await sleep(W.searchDelay);
           return done(200, JSON.stringify({ total: 100, page: pg, pages: 4, rows: Array.from({ length: 25 }, (_, i) => liveItem(lib, (pg - 1) * 25 + i)) }));
         }
+        if (p === "/api/avail" && W.availDown) { W.availReqs.push(u.search); return done(200, "{}"); }   // the gateway refusing our server
         if (p === "/api/avail") { W.availReqs.push(u.search); const out = {}; for (const id of (u.searchParams.get("ids") || "").split(",")) out[id] = { avail: false, copies: 0, total: 3, holds: 7 }; return done(200, JSON.stringify(out)); }
         return done(404, JSON.stringify({ error: "not mocked" }));
       }
@@ -241,6 +242,31 @@ scenario("cold first visit, large real catalog: usable shelf time, then search/f
   await page.click("#grid .card"); await sleep(400);
   ok(await page.$eval("#detail", d => d.open), "detail opens");
   ok(W.availReqs.length >= 1, "live shelf check requested for the opened title");
+  ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
+});
+
+scenario("shelf status says how old it is when the live check can't answer", async b => {
+  const full = Date.UTC(2026, 9, 24, 12), top = Date.UTC(2026, 10, 21, 18);
+  const old = makeRows("bclsnj", 400), fresh = makeRows("bclsnj", 10, { prefix: "NEW" }).map((r, i) => (r[0] = `SbclsnjC9${i}000`, r[3] = "d", r));
+  const body = zlib.gzipSync(JSON.stringify({ ver: top, finished: top, full, adds: [[top, 10]], total: 410, sc: "", rows: [...fresh, ...old] }));
+  const W = world({ snap: { bclsnj: { body } }, availDown: true });
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await pickLibrary(page, "bclsnj"); await waitCards(page, 12);
+  await page.waitForFunction(() => /titles/.test(document.querySelector("#status").textContent), { timeout: 20000 });
+  const st = await status(page);
+  ok(/shelf status as of Oct 24/.test(st), `the shelf names the oldest status date, not the top-up's ("${st.slice(0, 90)}")`);
+  const open = async (id, title) => {
+    await page.click(`#grid .card[data-id="${id}"]`); await page.waitForSelector("#liveAv", { timeout: 5000 }); await sleep(600);
+    const t = await page.$eval("#liveAv", e => e.textContent);
+    if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/asof-${title.replace(/\W+/g, "")}.png` });
+    await page.evaluate(() => document.querySelector("#detail").close()); await sleep(100);
+    return t;
+  };
+  const tNew = await open("SbclsnjC90000", "NEW Movie 0"), tOld = await open("SbclsnjC399", "BCLSNJ Movie 399");
+  ok(/as of Nov 21/.test(tNew) && !/right now/.test(tNew), `a new arrival says when the top-up read it ("${tNew}")`);
+  ok(/as of Oct 24/.test(tOld) && !/right now/.test(tOld), `an older title says the full copy's date ("${tOld}")`);
+  ok(W.availReqs.length >= 2, "the live check was still tried");
   ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
 });
 
