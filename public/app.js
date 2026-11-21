@@ -1653,8 +1653,18 @@ function showHome(fromPop) {
   maybeAskUpdates();
 }
 
+function shelfLink(e) {
+  if (!e) e = isMine() ? { lib: MINE } : { lib: S.lib, name: S.libName, guest: S.guest };
+  if (e.lib === MINE) return "/?lib=mine";
+  if (e.lib === GUEST) {
+    const cat = e.guest?.catalog?.url || (e === S || (!e.guest && isGuest()) ? guestCatalog()?.url : "") || "";
+    return cat ? "/?lib=shelf&catalog=" + encodeURIComponent(cat) : "/?lib=shelf";
+  }
+  return "/?lib=" + encodeURIComponent(e.lib);
+}
+
 function boot(fromPop) {
-  if (S.lib && !fromPop && history.state?.nl !== "shelf") history.pushState({ nl: "shelf" }, "", "/?lib=" + encodeURIComponent(S.lib));
+  if (S.lib && !fromPop && history.state?.nl !== "shelf") history.pushState({ nl: "shelf" }, "", shelfLink());
   counts();
   if (!S.lib) { showHome(); $("#libBtn").hidden = true; return; }
   $("#pick").hidden = true; $("#shelf").hidden = false;
@@ -1685,7 +1695,7 @@ function switchLib(e) {
   S.demo = false; S.shelf = "all"; S.sort = isGuest() ? "pop" : ""; clearFilter("all"); S.fmt = "all";
   toastDismissed = "";
   if ($("#account").open) $("#account").close();
-  save(); setTimeout(() => { boot(); history.replaceState({ nl: "shelf" }, "", "/?lib=" + encodeURIComponent(S.lib)); }, 60);
+  save(); setTimeout(() => { boot(); history.replaceState({ nl: "shelf" }, "", shelfLink()); }, 60);
 }
 function renameLib(i) {
   const lib = S.libs[i];
@@ -1731,7 +1741,7 @@ function openLibs() {
       <button class="btn ghost" id="addLib">+ Add another library card</button>
     </div>`);
   if (!$("#account").open) $("#account").showModal();
-  $("#acctBody").onclick = ev => {
+  $("#acctBody").onclick = async ev => {
     const t = ev.target.closest("button"); if (!t) return;
     if (t.hasAttribute("data-lib-mine")) return switchLib(MINE);
     if (t.dataset.libRename != null) return renameLib(+t.dataset.libRename);
@@ -1829,12 +1839,15 @@ function countVisit() {
 }
 countVisit();
 
-const linked = new URLSearchParams(location.search).get("lib");
+const params = new URLSearchParams(location.search);
+const linked = params.get("lib");
+const linkedCat = params.get("catalog");
 // library.nomadovernormal.com/?updates (the video description link) opens straight on the updates sign-up card.
-const wantsUpdates = new URLSearchParams(location.search).has("updates");
+const wantsUpdates = params.has("updates");
 history.replaceState({ nl: "home" }, "", "/");
 if (linked === MINE) { if (readableLibs().length >= 2) { S.lib = MINE; S.libName = "All my libraries"; boot(); } else showHome(); }
 else if (isReaderLib(linked)) enterReader({ name: linked === S.lib ? S.libName : "" }, linked);
+else if (linked === GUEST && linkedCat) chooseLibrary(linkedCat);
 else if (linked && linked !== GUEST) chooseLibrary(linked, linked !== S.lib || !!S.demo);
 else showHome();
 if (wantsUpdates) showUpdatesCard().querySelector("input[type=email]")?.focus();
