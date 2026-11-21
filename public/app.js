@@ -536,7 +536,7 @@ const SNAP_BASE = "https://nomad-library-copies.pages.dev/snap/";
 const LIVE_AFTER_MS = 1800;      // no usable copy by then: start browsing live while the download continues
 const FETCH_MS = 60000;          // hard stop for a copy download
 const KEEP_COPIES = 6;           // copies kept on this device, least recently used go first
-const REFRESH_AFTER = 12 * 36e5; // a device copy older than this is refreshed in the background
+const REFRESH_AFTER = 30 * 6e4;  // a device copy older than this is checked for a newer one (copies update daily)
 
 function validSnap(d) {
   if (!d || !Array.isArray(d.rows) || !d.rows.length || d.rows.length > 400000 || !Number.isFinite(d.finished)) return false;
@@ -745,8 +745,15 @@ function openCopy(lib) {
       const cached = await idbGet(lib);
       if (cached) {                     // use what is on this device right now, whatever its age
         arrive(cached.d);
+        // check for a newer copy on every open (a conditional request: usually a 304) and swap it in quietly
         if (Date.now() - cached.d.finished > REFRESH_AFTER)
-          fetchStatic(lib).then(r => { if (r.d && r.d.finished > cached.d.finished) idbPut(lib, r.d); }).catch(() => {});
+          fetchStatic(lib).then(r => {
+            if (!r.d || r.d.finished <= cached.d.finished) return;
+            idbPut(lib, r.d);
+            if (S.lib !== lib || SNAP?.lib !== lib) return;
+            LATE = { lib, snap: buildSnap(lib, r.d) };
+            if (!$("#q").value.trim() && !liveQ && !S.coll && !document.querySelector("dialog[open]") && scrollY < 300) reload();
+          }).catch(() => {});
         return;
       }
       const r = await fetchStatic(lib);
@@ -824,9 +831,10 @@ function snapRender() {
   } else
   $("#status").innerHTML = `${snapList.length.toLocaleString()} ${S.fmt === "games" ? "games" : "titles"}` +
     (isMine() ? ` from ${SNAP.libs} ${SNAP.libs === 1 ? "library" : "libraries"}` : "") +
-    (S.onShelf ? ` <span class="dim">· shelf status from ${when}, tap a title for right now</span>` : "") +
+    (S.onShelf ? ` <span class="dim">· shelf status from ${when}</span>` : "") +
     (q && isReaderLib(S.lib) ? ` · <a href="${esc(searchLink(readerCatalog(S.lib, libUrlOf(S.lib)), q))}" target="_blank" rel="noopener noreferrer">Search ${esc(libLabel())} for “${esc(q)}”</a>` : "") +
-    (q && !isMine() && !isReaderLib(S.lib) ? ` · <button class="link" id="wholeCat">Search the whole catalog for “${esc(q)}”</button>` : "") +
+    // the library gateway no longer answers our server, so a whole-catalog search opens the library's own site
+    (q && !isMine() && !isReaderLib(S.lib) ? ` · <a href="https://${esc(S.lib)}.bibliocommons.com/v2/search?query=${encodeURIComponent(q)}&searchType=smart&f_FORMAT=DVD%7CBLURAY" target="_blank" rel="noopener noreferrer">Search ${esc(libLabel())} for “${esc(q)}”</a>` : "") +
     (isMine() && SNAP.missing?.length ? ` <span class="dim">· ${esc(SNAP.missing.join(", "))} ${SNAP.missing.length > 1 ? "are" : "is"} still filling in, so ${SNAP.missing.length > 1 ? "they're" : "it's"} not here yet</span>` : "");
   snapMore();
 }
@@ -1011,6 +1019,35 @@ function readWatchlist(text) {
   return { source, items: items.filter(i => i.t).slice(0, 1000) };
 }
 
+// Watchlists are matched against the library's copy, right here in the browser: it's instant, and it works for every
+// catalog system we copy (the old server lookup only knew BiblioCommons, and the gateway stopped answering our
+// server in November 2026). A library with no copy yet still asks /api/find.
+async function copyData(lib) {
+  try { const c = await idbGet(lib); if (c?.d) return c.d; } catch {}
+  try { const r = await fetchStatic(lib); if (r.d) { idbPut(lib, r.d); return r.d; } } catch {}
+  return null;
+}
+function matchInCopy(d, lib, items) {
+  const byImdb = new Map(), byKey = new Map();
+  const add = (m, k, r) => { if (!k) return; const l = m.get(k); if (l) l.push(r); else m.set(k, [r]); };
+  for (const x of d.rows) {
+    if (x[3] === "g") continue;
+    const r = fromRow(x, lib, d.sc, d.rec);
+    add(byImdb, r.imdb, r); add(byKey, normFull(r.title), r);
+  }
+  return items.map(it => {
+    let hits = (it.imdb && byImdb.get(it.imdb)) || [];
+    if (!hits.length) {
+      const keys = [normFull(it.t), it.o && normFull(it.o).length >= 4 ? normFull(it.o) : ""].filter(Boolean);
+      hits = keys.flatMap(k => byKey.get(k) || []).filter(r =>
+        !(it.imdb && r.imdb && r.imdb !== it.imdb) &&                       // the same title, a different film (a remake)
+        !(it.y && r.fy && Math.abs(r.fy - it.y) > 1) &&
+        !(it.y && !r.fy && r.disc && r.disc < it.y));                        // a disc can't come out before its film
+    }
+    hits = [...new Map(hits.map(r => [r.id, r])).values()].sort((a, b) => (b.f === "b") - (a.f === "b")).slice(0, 4);
+    return { ...it, hits };
+  });
+}
 let matchingLib = null;
 async function matchWatchlist(lib = S.lib) {
   const W = S.watch;
@@ -1020,12 +1057,20 @@ async function matchWatchlist(lib = S.lib) {
   W.matches = W.matches || {};
   const out = [];
   $("#wlStatus").textContent = `Checking ${W.items.length} titles at ${libNameOf(lib)}…`;
-  for (let i = 0; i < W.items.length; i += 6) {
+  const copy = await copyData(lib);
+  let failed = 0;
+  if (copy) out.push(...matchInCopy(copy, lib, W.items));
+  else for (let i = 0; i < W.items.length; i += 6) {
     const chunk = W.items.slice(i, i + 6);
-    let hits = chunk.map(() => []);
-    try { hits = (await api("/api/find", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lib, items: chunk }) })).hits; } catch {}
-    chunk.forEach((it, j) => out.push({ ...it, hits: hits[j] || [] }));
+    let hits = null;
+    try { hits = (await api("/api/find", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lib, items: chunk }) })).hits; } catch { failed += chunk.length; }
+    chunk.forEach((it, j) => out.push({ ...it, hits: hits?.[j] || [] }));
     $("#wlStatus").textContent = `Checked ${Math.min(i + 6, W.items.length)} of ${W.items.length}…`;
+  }
+  if (failed && failed >= W.items.length / 2) {    // never call a whole watchlist "not at this library" because the check failed
+    matchingLib = null;
+    $("#wlStatus").textContent = `We couldn't check ${libNameOf(lib)} right now. Your watchlist is saved, so try again in a little while.`;
+    return;
   }
   W.matches[lib] = out;
   matchingLib = null;
@@ -1063,6 +1108,8 @@ async function showGuestWatch() {
 }
 
 async function showWatch() {
+  // matches saved before 11.21.26 came from a server lookup that had stopped working: check those again
+  if (S.watch?.items?.length && S.watch.mv !== 2) { S.watch.matches = {}; S.watch.mv = 2; }
   if (isGuest()) return showGuestWatch();
   if (isMine() && S.watch?.items?.length) {
     const todo = readableLibs().find(e => !S.watch.matches?.[e.lib]);
