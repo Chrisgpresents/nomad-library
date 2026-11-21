@@ -311,10 +311,12 @@ scenario("genres combine: picked genres widen, Foreign and TV narrow, with the y
   const p5 = await page.$$eval('#filtBody [data-genre][aria-pressed="true"]', e => e.map(x => x.dataset.genre));
   ok(p5.includes("tv") && !p5.includes("movies"), `TV shows and Movies only exclude each other (${p5})`);
   await close();
-  // a collection still replaces genres, and All clears them
+  // a collection narrows the shelf in the browser and keeps the genres picked
   await page.click("#filtBtn"); await sleep(150);
-  await page.click('#filtBody [data-coll="criterion"]'); await sleep(60);
-  ok((await page.$$eval('#filtBody [data-genre][aria-pressed="true"]', e => e.length)) === 0, "picking a collection clears the genres");
+  const before = await page.$$eval('#filtBody [data-genre][aria-pressed="true"]', e => e.length);
+  await page.click('#filtBody [data-coll="criterion"]'); await sleep(300);
+  ok((await page.$$eval('#filtBody [data-genre][aria-pressed="true"]', e => e.length)) === before, "picking a collection keeps the genres");
+  ok(await page.$eval('#filtBody [data-coll="criterion"]', e => e.getAttribute("aria-pressed")) === "true", "the collection chip is on");
   await close();
   ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
 });
@@ -697,7 +699,7 @@ scenario("a Vega catalog: not copied yet = popular shelf + one copy request, the
   const libs = await page.evaluate(() => JSON.parse(localStorage.getItem("nl")).libs.map(e => e.lib));
   ok(libs.filter(l => l === "shelf").length === 0 && libs.includes(ID), `the waiting entry was replaced, not duplicated (${libs})`);
   await page.click("#filtBtn"); await sleep(200);
-  ok(!(await page.$("[data-coll]")), "no BiblioCommons-only collections in the filters");
+  ok(!!(await page.$("[data-coll]")), "collections work at every library, Vega included");
   await page.evaluate(() => document.querySelector("#filters").close()); await sleep(400);
   await page.click("#grid .card .cover"); await sleep(400);
   const hold = await page.$eval("#detailBody", e => [...e.querySelectorAll("a.btn")].find(a => /Place a hold|Get in line/.test(a.textContent))?.href);

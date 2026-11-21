@@ -505,7 +505,14 @@ function queryMatch(r, words) {
   return named || words.some(w => GENRE_WORDS[w] && g.includes(GENRE_WORDS[w]));
 }
 
-const COLLECTIONS = [["mustsee", "1001 must-sees"], ["oscar", "Oscar winners"], ["registry", "Film Registry"], ["criterion", "Criterion"], ["ghibli", "Studio Ghibli"]];
+// Collections are lists of films (public/colls.json, IMDb ids from Wikidata, tools/build_collections.py) matched
+// against the copy in the browser, so they work at every library and combine with the other filters.
+const COLLECTIONS = [["oscar", "Oscar winners"], ["registry", "Film Registry"], ["criterion", "Criterion"], ["ghibli", "Studio Ghibli"]];
+let COLLS = null, collsP = null;
+const loadColls = () => collsP ||= fetch("/colls.json").then(r => r.json())
+  .then(d => { COLLS = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, new Set(v)])); })
+  .catch(() => { collsP = null; });
+const inColl = r => { const set = COLLS?.[S.coll]; return !!set && !!r.imdb && set.has(+String(r.imdb).replace(/^tt/, "")); };
 const FMT_NAME = { b: "Blu-ray", d: "DVD", g: "Game" };
 const YEAR_MIN = 1920, YEAR_MAX = new Date().getFullYear();
 const PER = 60;
@@ -767,7 +774,7 @@ function openCopy(lib) {
   });
 }
 
-const instant = () => SNAP && SNAP.lib === S.lib && SNAP.ver && ((!S.coll && !liveQ) || isMine());
+const instant = () => SNAP && SNAP.lib === S.lib && SNAP.ver && (!liveQ || isMine());
 
 let checkingCopy = false;
 async function checkPendingCopy() {
@@ -795,6 +802,7 @@ function snapFilter() {
     if (S.fmt === "games") { if (S.plat && r.plat !== S.plat) return false; }
     else if (!genreMatch(r)) return false;
     if (S.onShelf && !r.avail && !noAvail()) return false;
+    if (S.coll && !inColl(r)) return false;
     const y = r.fy || r.disc;
     if (S.y0 && (!y || y < S.y0)) return false;
     if (S.y1 && (!y || y > S.y1)) return false;
@@ -853,7 +861,9 @@ async function reload() {
   paintActive();
   const lib = S.lib;
   if (LATE && LATE.lib === lib) { SNAP = LATE.snap; LATE = null; }
-  if (isMine() && (S.coll || liveQ)) { S.coll = ""; liveQ = false; }
+  if (isMine() && liveQ) liveQ = false;
+  if (S.coll && !COLLECTIONS.some(c => c[0] === S.coll)) S.coll = "";   // a saved collection that no longer exists
+  if (S.coll && !COLLS) await loadColls();
   if (lib && (!SNAP || SNAP.lib !== lib || (isMine() && SNAP.ver !== "mine-" + readableLibs().map(e => e.lib).join("+")))) {
     $("#grid").innerHTML = ""; $("#status").textContent = "Opening your library…"; $("#more").textContent = "";
     await loadSnap();
@@ -903,11 +913,12 @@ function clearFilter(k) {
 }
 
 function filterCount() {
-  if (!instant() && !(SNAP?.ver && !liveQ && !S.coll)) return "";
+  if (!instant() && !(SNAP?.ver && !liveQ)) return "";
   return snapFilter().length.toLocaleString();
 }
 
 function openFilters() {
+  loadColls();
   const games = S.fmt === "games";
   const plats = games && SNAP?.games ? [...new Set(SNAP.games.map(g => g.plat).filter(Boolean))].sort() : [];
   const chip = (attr, val, label, on) => `<button class="chip" ${attr}="${esc(val)}" aria-pressed="${on}">${esc(label)}</button>`;
@@ -915,8 +926,8 @@ function openFilters() {
     <button class="x" data-close aria-label="Close">×</button>
     <h2>Filters</h2>
     ${games ? `<h3>Platform</h3><div class="chipgrid">${chip("data-plat", "", "All", !S.plat)}${plats.map(p => chip("data-plat", p, p, S.plat === p)).join("")}</div>`
-      : `<h3>Genre</h3><div class="chipgrid">${chip("data-genre", "", "All", !S.genres.length && !S.coll)}${GENRES.map(([k, l]) => chip("data-genre", k, l, S.genres.includes(k) && !S.coll)).join("")}</div>
-         ${isMine() || isReaderLib(S.lib) ? "" : `<h3>Collections</h3><div class="chipgrid">${COLLECTIONS.map(([k, l]) => chip("data-coll", k, l, S.coll === k)).join("")}</div>`}`}
+      : `<h3>Genre</h3><div class="chipgrid">${chip("data-genre", "", "All", !S.genres.length)}${GENRES.map(([k, l]) => chip("data-genre", k, l, S.genres.includes(k))).join("")}</div>
+         ${S.fmt === "games" ? "" : `<h3>Collections</h3><div class="chipgrid">${COLLECTIONS.map(([k, l]) => chip("data-coll", k, l, S.coll === k)).join("")}</div>`}`}
     <h3>Year</h3>
     <div class="range2">
       <label>From <output id="y0o">${S.y0 || YEAR_MIN}</output><input type="range" id="y0" min="${YEAR_MIN}" max="${YEAR_MAX}" value="${S.y0 || YEAR_MIN}"></label>
@@ -945,9 +956,9 @@ $("#filtBody").addEventListener("click", e => {
     const k = g.dataset.genre;
     S.genres = !k ? [] : S.genres.includes(k) ? S.genres.filter(x => x !== k)
       : [...S.genres.filter(x => !(k === "movies" && x === "tv") && !(k === "tv" && x === "movies")), k];
-    S.coll = ""; filtChanged();
+    filtChanged();
   }
-  else if (c) { S.coll = S.coll === c.dataset.coll ? "" : c.dataset.coll; if (S.coll) S.genres = []; filtChanged(); }
+  else if (c) { S.coll = S.coll === c.dataset.coll ? "" : c.dataset.coll; loadColls().then(filtChanged); }
   else if (p) { S.plat = p.dataset.plat; filtChanged(); }
   else if (e.target.id === "filtClear") { clearFilter("all"); filtChanged(); }
   else if (e.target.id === "filtShow") { $("#filters").close(); }
