@@ -256,6 +256,7 @@ scenario("shelf status says how old it is when the live check can't answer", asy
   await page.waitForFunction(() => /titles/.test(document.querySelector("#status").textContent), { timeout: 20000 });
   const st = await status(page);
   ok(/shelf status as of Oct 24/.test(st), `the shelf names the oldest status date, not the top-up's ("${st.slice(0, 90)}")`);
+  ok(/updated Nov 21/.test(st), `the shelf says when the library was last read ("${st.slice(0, 90)}")`);
   const open = async (id, title) => {
     await page.click(`#grid .card[data-id="${id}"]`); await page.waitForSelector("#liveAv", { timeout: 5000 }); await sleep(600);
     const t = await page.$eval("#liveAv", e => e.textContent);

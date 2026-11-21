@@ -879,7 +879,8 @@ function snapRender() {
   } else
   $("#status").innerHTML = `${snapList.length.toLocaleString()} ${S.fmt === "games" ? "games" : "titles"}` +
     (isMine() ? ` from ${SNAP.libs} ${SNAP.libs === 1 ? "library" : "libraries"}` : "") +
-    (noAvail() ? "" : ` <span class="dim">· shelf status as of ${when}</span>`) +
+    // updated = when the copier last read this library (the weekly rotation); shelf status can be older than that
+    ` <span class="dim">· updated ${asOf(SNAP.finished)}${noAvail() || when === asOf(SNAP.finished) ? "" : ` · shelf status as of ${when}`}</span>` +
     (q && isReaderLib(S.lib) ? ` · <a href="${esc(searchLink(readerCatalog(S.lib, libUrlOf(S.lib)), q))}" target="_blank" rel="noopener noreferrer">Search ${esc(libLabel())} for “${esc(q)}”</a>` : "") +
     // the library gateway no longer answers our server, so a whole-catalog search opens the library's own site
     (q && !isMine() && !isReaderLib(S.lib) ? ` · <a href="https://${esc(S.lib)}.bibliocommons.com/v2/search?query=${encodeURIComponent(q)}&searchType=smart&f_FORMAT=DVD%7CBLURAY" target="_blank" rel="noopener noreferrer">Search ${esc(libLabel())} for “${esc(q)}”</a>` : "") +
