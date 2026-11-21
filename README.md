@@ -51,6 +51,11 @@ npm test              # needs Google Chrome; the network is mocked
 - Deploy (maintainer only): `tools/deploy.sh` publishes a clean export of `main`. Retry on upload timeouts.
 - Passkeys are tied to the domain. Move to the custom domain BEFORE launch, or pages.dev passkeys stop working there (backup codes still work).
 
+## The gateway and freshness (since 11.21.26)
+- The BiblioCommons gateway answers 403 to every request from Cloudflare (any user agent), so the live relay (`/api/search`, `/api/avail`, `/api/find`) no longer works. Measured from a test Worker 11.21.26. We don't route around it.
+- So everything comes from the copies: a library without a copy opens the popular shelf (Check at searches its own BiblioCommons site) and switches to its own shelf when the copy lands; watchlists and collections (`public/colls.json`, `tools/build_collections.py`, Wikidata) match in the browser; whole-catalog search opens the library's own site. New BiblioCommons libraries are named from their own page (`og:site_name`).
+- The copier identifies as `NomadLibrary/1.0` (a bare Chrome user agent gets 403), asks the gateway once every ~7 s (from GitHub it blocks after ~50 to 65 quick requests), and gives each BiblioCommons copy a daily top-up of its newest titles (~5 requests) plus a full re-copy every 21 days. The page checks for a newer copy on every open.
+
 ## Library copies (since 10.11.26)
 - A library opens from a static file `snap/<slug>.json.gz` on Cloudflare Pages (https://nomad-library-copies.pages.dev/snap/, project nomad-library-copies; GitHub Pages capped at 1 GB), made by the copier in the `nomad-library-data` repo on GitHub Actions. No Worker serves catalog data. The browser keeps its own copy in IndexedDB (6 libraries, used at once whatever its age, refreshed in the background).
 - A library with no copy browses live (`/api/search`). The first visitor's browser sends one `POST /api/want` (once per device per day); the copier reads `GET /api/want` and copies requested libraries, oldest request first.
