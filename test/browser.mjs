@@ -54,12 +54,12 @@ const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA
 
 // ---- fixtures ---------------------------------------------------------------------------------------
 function makeRows(slug, n, { games = 0, prefix = slug.toUpperCase() } = {}) {
-  const G = ["horror", "comedy", "drama", "action,thriller", "scifi", "family,animation", "documentary", "romance"];
+  const G = ["horror", "comedy", "drama", "action,thriller", "scifi", "family,animation", "documentary", "romance", "horror,foreign"];
   const rows = [];
   for (let i = 0; i < n; i++) {
     const g = i >= n - games;
     rows.push([`S${slug}C${i}`, g ? `${prefix} Game ${i}` : `${prefix} Movie ${i} ${["Alpha", "Bravo", "Charlie", "Delta"][i % 4]}`, "", g ? "g" : i % 2 ? "b" : "d",
-      2000 + (i % 25), "", i % 3 ? 1 : 0, i % 5, g ? "" : G[i % G.length], 0, g ? ["Switch", "PS5", "Xbox One"][i % 3] : "",
+      2000 + (i % 25), "", i % 3 ? 1 : 0, i % 5, g ? "" : G[i % G.length], !g && i % 40 === 7 ? 1 : 0, g ? ["Switch", "PS5", "Xbox One"][i % 3] : "",
       g ? 0 : +(4 + (i % 50) / 10).toFixed(1), g ? 0 : 1000 + i * 3, g ? "" : `tt${1000000 + i}`, g ? 0 : 1990 + (i % 35)]);
   }
   return rows;
@@ -762,7 +762,7 @@ scenario("finding your library: paste any catalog link or website, no second pas
   // a website with no catalog link: we ask for the catalog itself, and skipping still works
   await paste("smalltownlib.org");
   await page.waitForSelector("#browseAnyway", { timeout: 4000 });
-  ok(/looks like your library's website/.test(await page.$eval("#pickErr", e => e.textContent)), "a website without a catalog link asks for the catalog link, in the same box");
+  ok(/If that's your library's website, open its catalog/.test(await page.$eval("#pickErr", e => e.textContent)), "a website without a catalog link asks for the catalog link, in the same box");
   await page.click("#browseAnyway"); await waitCards(page, 12);
   h = await checkHref();
   ok(h && h[1].startsWith("https://smalltownlib.org"), `skipping still opens movies; Check opens their website (${h?.[1]})`);

@@ -71,6 +71,9 @@ async function fromWebsite(ctx, input) {
     if (slug) return { slug, host };
     if (catalogSystem(finalUrl)) return { catalog: readCatalogLink(finalUrl), name };
     pageSystem = systemInPage(first.html.slice(0, 80000));
+    // the pasted page is itself an Aspen catalog (its own search and account links are relative): keep that address,
+    // never a sister catalog it links to (Marion County's main catalog links to its kids catalog, #89, #26)
+    if (first.status < 400 && /(?:href|action)=["']\/(?:Search\/Results|Union\/Search|MyAccount\/Home|GroupedWork\/)/i.test(first.html)) return { catalog: readCatalogLink(finalUrl, "aspen"), name };
     // an address on the page that is plainly a catalog wins; otherwise follow up to three links that say "Catalog" or "Search"
     for (const u of catalogUrls(first.html)) if (catalogSystem(u) && catalogSystem(u) !== "bibliocommons" && !SOCIAL.test(u)) return { catalog: readCatalogLink(u), name };
     const links = [];

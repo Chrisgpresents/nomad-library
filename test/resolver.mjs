@@ -95,6 +95,11 @@ await test("a Corvina catalog gets a copy id the copier's reader agrees with (no
   assert.ok(isReaderLib("corvina.saman.fszek.hu"));
   assert.equal(readerCatalog("corvina.saman.fszek.hu").find, "https://saman.fszek.hu/WebPac/CorvinaWeb?action=find&index0=ZUTY&text0={q}&textlogic0=and&pagesize=10");
 });
+await test("an Aspen catalog that links to a sister catalog keeps its own address (Marion County, #89)", async () => {
+  internet({ "https://librarycat.marionfl.org": { html: '<title>Marion County Public Library System</title><form action="/Search/Results"></form><a href="/MyAccount/Home">Account</a><a href="https://marionkids.aspendiscovery.org/">Kids catalog</a>' } }, {});
+  const a = await ask("https://librarycat.marionfl.org/");
+  assert.equal(a.body.vendor, "aspen"); assert.equal(a.body.host, "librarycat.marionfl.org");
+});
 await test("a German OCLC OPEN catalog is recognized from its link, its pages, or a library website's Katalog link", async () => {
   internet({ "https://katalog.stadtbuecherei.frankfurt.de": { status: 403 } }, {});
   const a = await ask("https://katalog.stadtbuecherei.frankfurt.de/Mediensuche/Einfache-Suche?id=2461829");

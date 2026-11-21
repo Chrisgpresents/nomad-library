@@ -165,7 +165,7 @@ function rememberLib() {
     S.libs[i] = e; S.libName = e.name;
     if (isGuest()) S.guest.name = e.name;
   } else S.libs.push(e);
-  if (S.libs.length > 8) S.libs = S.libs.slice(-8);
+  if (S.libs.length > 12) S.libs = S.libs.slice(-12);
 }
 if (!S.libs.length && S.lib && !S.demo && S.lib !== MINE) rememberLib();
 // The visitor's catalog: { url, host, system, find }. Older saves kept only a host and a system name.
@@ -178,6 +178,13 @@ function guestCatalog() {
 const libLabel = () => S.libName || "your library";
 // Searches the visitor's own catalog for the title. Their browser opens it, so catalogs that block other websites still work.
 const checkUrl = r => searchLink(guestCatalog(), r.title);
+// "The Richmond way. Season 3" -> "Season 3 · The Richmond way": the season is what tells the tiles apart (#57)
+function tvSub(s) {
+  const m = String(s).match(/\b(?:the\s+)?(?:complete\s+)?(?:season|series|volume|vol\.|part)\s*\d+/i);
+  if (!m || m.index === 0) return s;
+  const rest = (s.slice(0, m.index) + " " + s.slice(m.index + m[0].length)).replace(/\s*[.,:;]\s*$/, "").replace(/^[\s.,:;-]+/, "").replace(/\s+/g, " ").trim();
+  return m[0].charAt(0).toUpperCase() + m[0].slice(1) + (rest ? " · " + rest : "");
+}
 function cardHTML(r) {
   const rating = badgeHTML(r);
   const cover = r.img
@@ -189,7 +196,7 @@ function cardHTML(r) {
   return `<div class="card" data-id="${esc(r.id)}">
     <button class="cover" data-open="${esc(r.id)}" aria-label="${esc(r.title)}">${cover}${rating}</button>
     <button class="heart" data-fav="${esc(r.id)}" aria-pressed="${isFav(r)}" aria-label="Favorite">${isFav(r) ? "♥" : "♡"}</button>
-    <div class="ttl">${esc(r.title)}${r.tv && r.sub ? `<span class="tsub">${esc(r.sub)}</span>` : ""}</div>
+    <div class="ttl">${esc(r.title)}${r.tv && r.sub ? `<span class="tsub">${esc(tvSub(r.sub))}</span>` : ""}</div>
     <div class="meta">${r.f === "g" ? esc(r.plat || r.disc || "") : esc(filmYear(r))}${isGuest() ? "" : ` · ${esc(r.fmts || r.fmt)}`}</div>
     ${av}
   </div>`;
@@ -247,6 +254,7 @@ function openDetail(r) {
           ${isMine() ? guestLibs().map(e => `<a class="btn ghost" href="${esc(searchLink(e.guest.catalog, r.title))}" target="_blank" rel="noopener noreferrer">Check at ${esc(shortName(e.name) || "your other library")}</a>`).join("") : ""}
           <a class="btn ghost" href="/t?q=${encodeURIComponent(r.title + " " + (r.fy || ""))}" target="_blank" rel="noopener noreferrer" data-trailer>Trailer</a>
           ${imdb}
+          ${r.imdb && r.f !== "g" && !isTV(r) ? `<a class="btn ghost" href="https://letterboxd.com/imdb/${esc(r.imdb)}/" target="_blank" rel="noopener noreferrer">Letterboxd</a>` : ""}
           <button class="btn ghost" data-fav="${esc(r.id)}">${isFav(r) ? "♥ Saved" : "♡ Save"}</button>
         </div>
       </div>
@@ -454,7 +462,7 @@ function genreMatch(r) {
   if (!S.genres.length) return true;
   if (S.genres.includes("movies") && isTV(r)) return false;
   const wide = S.genres.filter(g => !NARROW.has(g));
-  return S.genres.every(g => !NARROW.has(g) || g === "movies" || r.genres.includes(g)) && (!wide.length || wide.some(g => r.genres.includes(g)));
+  return S.genres.every(g => !NARROW.has(g) || g === "movies" || (g === "tv" ? isTV(r) : r.genres.includes(g))) && (!wide.length || wide.some(g => r.genres.includes(g)));
 }
 // ---- search: titles, genres, actors and directors -------------------------------
 // Typed genre words match the genre ("horror", "scary movies", "kids"). Names match through ix/people/<xx>.json:
@@ -924,6 +932,13 @@ function filterCount() {
   return snapFilter().length.toLocaleString();
 }
 
+// Foreign and TV narrow the shelf, so a chip that would empty it (many catalogs don't tag them) isn't offered (#6)
+function hasGenre(k) {
+  if (k !== "foreign" && k !== "tv") return true;
+  if (!SNAP?.films || isGuest()) return true;
+  SNAP.has ||= {};
+  return SNAP.has[k] ??= SNAP.films.some(r => k === "tv" ? isTV(r) : r.genres.includes(k));
+}
 function openFilters() {
   loadColls();
   const games = S.fmt === "games";
@@ -933,7 +948,7 @@ function openFilters() {
     <button class="x" data-close aria-label="Close">×</button>
     <h2>Filters</h2>
     ${games ? `<h3>Platform</h3><div class="chipgrid">${chip("data-plat", "", "All", !S.plat)}${plats.map(p => chip("data-plat", p, p, S.plat === p)).join("")}</div>`
-      : `<h3>Genre</h3><div class="chipgrid">${chip("data-genre", "", "All", !S.genres.length)}${GENRES.map(([k, l]) => chip("data-genre", k, l, S.genres.includes(k))).join("")}</div>
+      : `<h3>Genre</h3><div class="chipgrid">${chip("data-genre", "", "All", !S.genres.length)}${GENRES.filter(([k]) => S.genres.includes(k) || hasGenre(k)).map(([k, l]) => chip("data-genre", k, l, S.genres.includes(k))).join("")}</div>
          ${S.fmt === "games" ? "" : `<h3>Collections</h3><div class="chipgrid">${COLLECTIONS.map(([k, l]) => chip("data-coll", k, l, S.coll === k)).join("")}</div>`}`}
     <h3>Year</h3>
     <div class="range2">
@@ -1040,7 +1055,9 @@ function readWatchlist(text) {
     source = "Letterboxd";
     items = rows.map(r => ({ t: r[col("name")], y: +r[col("year")] || null }));
   }
-  return { source, items: items.filter(i => i.t).slice(0, 1000) };
+  const seen = new Set();
+  items = items.filter(i => i.t && !seen.has(i.imdb || norm(i.t) + "|" + (i.y || "")) && seen.add(i.imdb || norm(i.t) + "|" + (i.y || "")));
+  return { source, items: items.slice(0, 5000) };
 }
 
 // Watchlists are matched against the library's copy, right here in the browser: it's instant, and it works for every
@@ -1243,7 +1260,7 @@ function mergeIn(data, signingIn = false) {
   // Your account's library wins over whatever this device was last browsing.
   if (data.lib) { S.lib = data.lib; S.libName = data.libName; S.demo = false; if (data.lib === GUEST) S.guest = data.guest || S.guest || {}; }
   if (Array.isArray(data.libs)) {
-    if (signingIn) { const have = new Set(data.libs.map(libKey)); S.libs = [...data.libs, ...S.libs.filter(e => !have.has(libKey(e)))].slice(-8); }
+    if (signingIn) { const have = new Set(data.libs.map(libKey)); S.libs = [...data.libs, ...S.libs.filter(e => !have.has(libKey(e)))].slice(-12); }
     else S.libs = data.libs;
   }
   rememberLib();
@@ -1591,7 +1608,8 @@ let websiteOnly = null;     // a library website with no catalog we could find: 
 function openOther(d) {
   if (d.unknown || !d.catalog) {
     websiteOnly = { name: d.name || "", catalog: d.catalog };
-    $("#pickErr").innerHTML = `That looks like your library's website. Open its catalog, the page where you search for books, and paste that link instead. <button class="link" type="button" id="browseAnyway">Or browse movies anyway</button>`;
+    // it may be the website, or a catalog system we don't know yet (#14): say both, plainly
+    $("#pickErr").innerHTML = `We couldn't find a catalog we know there. If that's your library's website, open its catalog (the page where you search for books) and paste that link. If it already is the catalog, it runs on a system we can't read yet. <button class="link" type="button" id="browseAnyway">Browse movies anyway</button>`;
     return;
   }
   const lib = { name: d.name || "", catalog: d.catalog };
@@ -1614,7 +1632,7 @@ async function chooseLibrary(q, demo = false) {
     else $("#pickErr").textContent = e.message;
   }
 }
-const isLink = v => /^\S+\.[a-z]{2,}(\/\S*)?$/i.test(v.replace(/^https?:\/\//i, ""));
+const isLink = v => /^\S+\.[a-z]{2,}(:\d{2,5})?([/?#]\S*)?$/i.test(v.replace(/^https?:\/\//i, ""));   // ports too (#23)
 function openTyped() {
   const v = $("#pickInput").value.trim();
   if (!v) { $("#pickErr").textContent = "Paste your library's catalog link first. The 3 steps below show where to find it."; return; }
