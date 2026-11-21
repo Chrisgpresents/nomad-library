@@ -973,6 +973,40 @@ scenario("rename libraries: save, cancel, reject blank names, persist and switch
   ok(page.errors.length === 0, `no page errors ${page.errors.slice(0, 1)}`);
 });
 
+scenario("shelf pagination: scrolling loads by itself for a few pages, then a button lets the reader reach the footer", async b => {
+  const W = world({ snap: { alpha: { body: snapBody(makeRows("alpha", 600)) } } });
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await pickLibrary(page, "alpha");
+  await waitCards(page, 12);
+  for (let i = 0; i < 8; i++) { await page.$eval(".foot", e => e.scrollIntoView({ block: "end" })); await sleep(400); }
+  const auto = await cards(page);
+  ok(auto === 240, `scrolling filled in 4 pages by itself, then stopped (${auto} cards)`);
+  const more = await page.$("#loadMore");
+  ok(!!more, "there is an explicit Load more results button");
+  if (!more) return;
+  await more.click();
+  await waitCards(page, auto + 1);
+  ok(await cards(page) > auto, "Load more results appends the next page");
+});
+
+scenario("shelf pagination requests live results only when asked", async b => {
+  const W = world();
+  const { page } = await newPage(b, W);
+  await page.goto(`https://${HOST}/`, { waitUntil: "domcontentloaded" });
+  await pickLibrary(page, "gamma");
+  await waitCards(page, 12);
+  await page.waitForSelector("#loadMore");
+  const firstPage = await cards(page);
+  const requests = W.searchReqs.length;
+  await page.$eval(".foot", e => e.scrollIntoView({ block: "end" }));
+  await sleep(750);
+  ok(W.searchReqs.length === requests, "scrolling to the footer sends no live search");
+  await page.click("#loadMore");
+  await waitCards(page, firstPage + 1);
+  ok(W.searchReqs.length === requests + 1, "Load more results sends one live search");
+});
+
 // ---- run ------------------------------------------------------------------------------------------------
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-first-run", "--disable-gpu", ...(process.env.CI ? ["--no-sandbox"] : [])] });
 try {
