@@ -691,7 +691,7 @@ scenario("a Vega catalog: not copied yet = popular shelf + one copy request, the
   // the copy lands: the next visit moves the visitor onto the library's own shelf
   W.snap[ID] = { body };
   await page.reload({ waitUntil: "domcontentloaded" });
-  await openSaved(page);
+  await openSaved(page).catch(() => {});   // the address now carries the catalog link (#95), so a reload can go straight to the shelf
   await page.waitForFunction(() => /titles/.test(document.querySelector("#status")?.textContent || ""), { timeout: 15000 });
   await waitCards(page, 12);
   ok(/\d+ titles/.test(await status(page)), `its own shelf: "${(await status(page)).slice(0, 40)}"`);
