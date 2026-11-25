@@ -95,6 +95,19 @@ await test("a Corvina catalog gets a copy id the copier's reader agrees with (no
   assert.ok(isReaderLib("corvina.saman.fszek.hu"));
   assert.equal(readerCatalog("corvina.saman.fszek.hu").find, "https://saman.fszek.hu/WebPac/CorvinaWeb?action=find&index0=ZUTY&text0={q}&textlogic0=and&pagesize=10");
 });
+await test("a Koha catalog gets a copy id the copier's reader agrees with (nomad-library-data/readers/koha.mjs libFromUrl)", async () => {
+  const id = u => readerId(readCatalogLink(u));
+  assert.equal(id("https://catalog.cclsny.org/cgi-bin/koha/opac-detail.pl?biblionumber=576758"), "koha.catalog.cclsny.org");
+  assert.equal(id("https://catalog.cclsny.org/cgi-bin/koha/opac-search.pl?q=dune&limit=branch:FRANKLNVIL"), "koha.catalog.cclsny.org_franklnvil");
+  assert.ok(isReaderLib("koha.catalog.cclsny.org_franklnvil"));
+  // a bare catalog home page is named by its Koha links
+  internet({ "https://catalog.fargolibrary.org": { html: '<title>Fargo Public Library catalog</title><form action="/cgi-bin/koha/opac-search.pl"></form>' } }, {});
+  const a = await ask("https://catalog.fargolibrary.org/");
+  assert.equal(a.body.vendor, "koha"); assert.equal(a.body.host, "catalog.fargolibrary.org");
+  const ko = await import("../../nomad-library-data/readers/koha.mjs").catch(() => null);   // both repos side by side: ids must match
+  if (ko) for (const u of ["https://catalog.cclsny.org/cgi-bin/koha/opac-detail.pl?biblionumber=1", "https://catalog.cclsny.org/cgi-bin/koha/opac-search.pl?q=x&limit=branch:FRANKLNVIL"])
+    assert.equal(ko.libFromUrl(u).id, id(u));
+});
 await test("an Aspen catalog that links to a sister catalog keeps its own address (Marion County, #89)", async () => {
   internet({ "https://librarycat.marionfl.org": { html: '<title>Marion County Public Library System</title><form action="/Search/Results"></form><a href="/MyAccount/Home">Account</a><a href="https://marionkids.aspendiscovery.org/">Kids catalog</a>' } }, {});
   const a = await ask("https://librarycat.marionfl.org/");

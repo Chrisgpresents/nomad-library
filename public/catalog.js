@@ -112,7 +112,7 @@ export function searchLink(cat, title) {
 // Library ids look like "vega.sdpl.na5.iiivega.com" ("<system>.<host>", plus "_<scope>" for some systems). BiblioCommons
 // slugs never contain a dot, so a dot is how both the page and the server tell them apart.
 export const isReaderLib = lib => typeof lib === "string" && /^[a-z0-9]+\.[a-z0-9.-]+(_[a-z0-9-]+)?$/.test(lib);
-export const READER_SYSTEMS = ["vega", "polaris", "enterprise", "carl", "spydus", "encore", "corvina", "open"];
+export const READER_SYSTEMS = ["vega", "polaris", "enterprise", "carl", "spydus", "encore", "corvina", "open", "koha"];
 // A catalog link -> the id we copy it under, or "" when we can't copy that system yet.
 // These mirror libFromUrl() in nomad-library-data/readers/<system>.mjs; the copier refuses a link whose id differs.
 export function readerId(cat) {
@@ -149,6 +149,11 @@ export function readerId(cat) {
   if (cat.system === "corvina") {
     const m = u.pathname.match(/^(.*?\/CorvinaWeb)/i), prefix = m ? m[1] : "/WebPac/CorvinaWeb";
     return ("corvina." + host + (prefix === "/WebPac/CorvinaWeb" ? "" : "_" + prefix.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase())).replace(/[^a-z0-9._-]/g, "");
+  }
+  if (cat.system === "koha") {   // one member library of a shared Koha: ?branch=X or ?limit=branch:X (koha.mjs libFromUrl)
+    const lim = [u.searchParams.get("branch"), ...u.searchParams.getAll("limit").map(l => (l.match(/^(?:homebranch|holdingbranch|branch):(.+)$/i) || [])[1])]
+      .find(x => x && /^[A-Za-z0-9_-]{1,20}$/.test(x)) || "";
+    return clean("koha." + host + (lim ? "_" + lim.toLowerCase() : ""));
   }
   if (cat.system === "carl") return /^(www\.)?tlcdelivers\.com$/.test(host) ? "" : clean("carl." + host);   // tlcdelivers.com itself is the vendor's site
   return "";
